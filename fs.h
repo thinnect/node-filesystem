@@ -11,7 +11,7 @@
 #define FS_WRONLY (SPIFFS_WRONLY)
 #define FS_RDWR   (SPIFFS_RDWR)
 
-typedef spiffs_file fs_fd;
+typedef int32_t fs_fd;
 
 void fs_init();
 void fs_lock();
