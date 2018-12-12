@@ -4,6 +4,11 @@
 #include "cmsis_os2.h"
 #include "spi_flash.h"
 #include "spiffs.h"
+#include "loglevels.h"
+
+#define __MODUUL__ "fs"
+#define __LOG_LEVEL__ (LOG_LEVEL_fs & BASE_LOG_LEVEL)
+#include "log.h"
 
 static volatile int fs_ready;
 static uint8_t fs_mount_count;
@@ -27,12 +32,11 @@ void fs_init(){
 }
 
 void fs_lock(){
-	while(!fs_ready);
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
+	while(!fs_ready);
 }
 
 void fs_unlock(){
-	while(!fs_ready);
 	osMutexRelease(fs_exclusive_mutex);
 }
 
@@ -40,8 +44,8 @@ fs_fd fs_open(char *path, uint32_t flags){
 	spiffs_file sfd;
 	fs_fd fd;
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
 	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
 	sfd = SPIFFS_open(&fs_fs, path, flags, 0);
 	fd = (fs_mount_count << 16) | sfd;
 	osMutexRelease(fs_mutex);
@@ -53,8 +57,8 @@ fs_fd fs_open(char *path, uint32_t flags){
 int32_t fs_read(fs_fd fd, void *buf, int32_t len){
 	int32_t ret;
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
 	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
 	if(((fd >> 16) & 0xFF) != fs_mount_count){
 		ret = -1;
 	}else{
@@ -68,8 +72,8 @@ int32_t fs_read(fs_fd fd, void *buf, int32_t len){
 int32_t fs_write(fs_fd fd, const void *buf, int32_t len){
 	int32_t ret;
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
 	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
 	if(((fd >> 16) & 0xFF) != fs_mount_count){
 		ret = -1;
 	}else{
@@ -80,10 +84,42 @@ int32_t fs_write(fs_fd fd, const void *buf, int32_t len){
 	return(ret);
 }
 
+int32_t fs_lseek(fs_fd fd, int32_t offs, int whence){
+	int32_t ret;
+	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
+	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
+	if(((fd >> 16) & 0xFF) != fs_mount_count){
+		ret = -1;
+	}else{
+		ret = SPIFFS_lseek(&fs_fs, (fd & 0xFFFF), offs, whence);
+	}
+	osMutexRelease(fs_mutex);
+	osMutexRelease(fs_exclusive_mutex);
+	return(ret);
+}
+
+int32_t fs_fstat(fs_fd fd, fs_stat *s){
+	int32_t ret;
+	spiffs_stat stat;
+	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
+	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
+	if(((fd >> 16) & 0xFF) != fs_mount_count){
+		ret = -1;
+	}else{
+		ret = SPIFFS_fstat(&fs_fs, (fd & 0xFFFF), &stat);
+		s->size = stat.size;
+	}
+	osMutexRelease(fs_mutex);
+	osMutexRelease(fs_exclusive_mutex);
+	return(ret);
+}
+
 void fs_close(fs_fd fd){
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
 	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
 	if(((fd >> 16) & 0xFF) != fs_mount_count){
 		;
 	}else{
@@ -95,8 +131,8 @@ void fs_close(fs_fd fd){
 
 void fs_unlink(char *path){
 	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
 	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	while(!fs_ready);
 	SPIFFS_remove(&fs_fs, path);
 	osMutexRelease(fs_mutex);
 	osMutexRelease(fs_exclusive_mutex);
@@ -115,7 +151,7 @@ static void fs_thread(void *p){
 	}
 	fs_mount_count++;
 	fs_ready = 1;
-	printf("FS: READY\n");
+	debug1("filesystem ready\n");
 	while(1){
 		if(osMessageQueueGet(fs_queue, &command, NULL, 1000) != osOK)continue;
 		printf("FS: GOT MESSAGE\n");
