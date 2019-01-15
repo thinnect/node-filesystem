@@ -144,6 +144,7 @@ static void fs_thread(void *p){
 	fs_cfg.hal_erase_f = spi_flash_erase;
 	fs_cfg.hal_read_f = spi_flash_read;
 	fs_cfg.hal_write_f = spi_flash_write;
+	// spi_flash_mass_erase();
 	ret = SPIFFS_mount(&fs_fs, &fs_cfg, fs_work_buf, fs_fds, sizeof(fs_fds), NULL, 0, 0);
 	if(ret != SPIFFS_OK){
 		SPIFFS_format(&fs_fs);
