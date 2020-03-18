@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "cmsis_os2.h"
+#include "platform_mutex.h"
 #include "spi_flash.h"
 #include "spiffs.h"
 #include "loglevels.h"
@@ -12,7 +13,7 @@
 
 static volatile int fs_ready;
 static uint8_t fs_mount_count;
-static osMutexId_t fs_exclusive_mutex, fs_mutex;
+static platform_mutex_t fs_mutex;
 static osMessageQueueId_t fs_queue;
 static spiffs_config fs_cfg;
 static spiffs fs_fs;
@@ -21,145 +22,174 @@ static uint8_t fs_fds[32 * 4];
 
 static void fs_thread(void *p);
 
-void fs_init(){
+void fs_init()
+{
 	fs_ready = 0;
 	fs_mount_count = 0;
-	fs_exclusive_mutex = osMutexNew(NULL);
-	fs_mutex = osMutexNew(NULL);
+	fs_mutex = platform_mutex_new("fs");
 	fs_queue = osMessageQueueNew(16, sizeof(void *), NULL);
 	osThreadNew(fs_thread, NULL, NULL);
 	// osMessageQueuePut(fs_queue, &fs_queue, 0, 0);
 }
 
-void fs_lock(){
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(!fs_ready);
-}
-
-void fs_unlock(){
-	osMutexRelease(fs_exclusive_mutex);
-}
-
-fs_fd fs_open(char *path, uint32_t flags){
+fs_fd fs_open(char *path, uint32_t flags)
+{
 	spiffs_file sfd;
 	fs_fd fd;
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
+	spi_flash_lock();
+	debug1("open: %s", path);
 	sfd = SPIFFS_open(&fs_fs, path, flags, 0);
+	spi_flash_unlock();
 	fd = (fs_mount_count << 16) | sfd;
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
-	if(sfd < 0)return(sfd);
-	return(fd);
+	platform_mutex_release(fs_mutex);
+	if(sfd < 0)
+	{
+		return sfd;
+	}
+	return fd;
 }
 
-int32_t fs_read(fs_fd fd, void *buf, int32_t len){
+int32_t fs_read(fs_fd fd, void *buf, int32_t len)
+{
 	int32_t ret;
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
-	if(((fd >> 16) & 0xFF) != fs_mount_count){
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
 		ret = -1;
-	}else{
+	}
+	else
+	{
+		spi_flash_lock();
 		ret = SPIFFS_read(&fs_fs, (fd & 0xFFFF), buf, len);
+		spi_flash_unlock();
 	}
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
-	return(ret);
+	platform_mutex_release(fs_mutex);
+	return ret;
 }
 
-int32_t fs_write(fs_fd fd, const void *buf, int32_t len){
+int32_t fs_write(fs_fd fd, const void *buf, int32_t len)
+{
 	int32_t ret;
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
-	if(((fd >> 16) & 0xFF) != fs_mount_count){
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
 		ret = -1;
-	}else{
+	}
+	else
+	{
+		spi_flash_lock();
 		ret = SPIFFS_write(&fs_fs, (fd & 0xFFFF), (void *)buf, len);
+		spi_flash_unlock();
 	}
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
-	return(ret);
+	platform_mutex_release(fs_mutex);
+	return ret;
 }
 
-int32_t fs_lseek(fs_fd fd, int32_t offs, int whence){
+int32_t fs_lseek(fs_fd fd, int32_t offs, int whence)
+{
 	int32_t ret;
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
-	if(((fd >> 16) & 0xFF) != fs_mount_count){
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
 		ret = -1;
-	}else{
-		ret = SPIFFS_lseek(&fs_fs, (fd & 0xFFFF), offs, whence);
 	}
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
-	return(ret);
+	else
+	{
+		spi_flash_lock();
+		ret = SPIFFS_lseek(&fs_fs, (fd & 0xFFFF), offs, whence);
+		spi_flash_unlock();
+	}
+	platform_mutex_release(fs_mutex);
+	return ret;
 }
 
-int32_t fs_fstat(fs_fd fd, fs_stat *s){
+int32_t fs_fstat(fs_fd fd, fs_stat *s)
+{
 	int32_t ret;
 	spiffs_stat stat;
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
-	if(((fd >> 16) & 0xFF) != fs_mount_count){
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
 		ret = -1;
-	}else{
+	}
+	else
+	{
+		spi_flash_lock();
 		ret = SPIFFS_fstat(&fs_fs, (fd & 0xFFFF), &stat);
+		spi_flash_unlock();
 		s->size = stat.size;
 	}
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
-	return(ret);
+	platform_mutex_release(fs_mutex);
+	return ret;
 }
 
-void fs_close(fs_fd fd){
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+void fs_close(fs_fd fd)
+{
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
-	if(((fd >> 16) & 0xFF) != fs_mount_count){
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
 		;
-	}else{
-		SPIFFS_close(&fs_fs, (fd & 0xFFFF));
 	}
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
+	else
+	{
+		spi_flash_lock();
+		SPIFFS_close(&fs_fs, (fd & 0xFFFF));
+		spi_flash_unlock();
+	}
+	platform_mutex_release(fs_mutex);
 }
 
-void fs_unlink(char *path){
-	while(osMutexAcquire(fs_exclusive_mutex, 1000) != osOK);
-	while(osMutexAcquire(fs_mutex, 1000) != osOK);
+void fs_unlink(char *path)
+{
+	platform_mutex_acquire(fs_mutex);
 	while(!fs_ready);
+	spi_flash_lock();
+	debug1("unlink: %s", path);
 	SPIFFS_remove(&fs_fs, path);
-	osMutexRelease(fs_mutex);
-	osMutexRelease(fs_exclusive_mutex);
+	spi_flash_unlock();
+	platform_mutex_release(fs_mutex);
 }
 
-static void fs_thread(void *p){
+static void fs_thread(void *p)
+{
 	int ret;
 	void *command;
+	uint32_t total, used;
 	fs_cfg.hal_erase_f = spi_flash_erase;
 	fs_cfg.hal_read_f = spi_flash_read;
 	fs_cfg.hal_write_f = spi_flash_write;
 	// spi_flash_mass_erase();
+	debug1("mounting");
+	spi_flash_lock();
 	ret = SPIFFS_mount(&fs_fs, &fs_cfg, fs_work_buf, fs_fds, sizeof(fs_fds), NULL, 0, 0);
-	if(ret != SPIFFS_OK){
+	if(ret != SPIFFS_OK)
+	{
+		debug1("formatting");
 		SPIFFS_format(&fs_fs);
 		SPIFFS_mount(&fs_fs, &fs_cfg, fs_work_buf, fs_fds, sizeof(fs_fds), NULL, 0, 0);
 	}
+	ret = SPIFFS_info(&fs_fs, &total, &used);
+	spi_flash_unlock();
 	fs_mount_count++;
+	debug1("ready, total: %u, used: %u", (unsigned int)total, (unsigned int)used);
 	fs_ready = 1;
-	debug1("filesystem ready\n");
-	while(1){
+	while(1)
+	{
 		if(osMessageQueueGet(fs_queue, &command, NULL, 1000) != osOK)continue;
-		printf("FS: GOT MESSAGE\n");
+		debug1("got message");
 	}
 }
+
 /*
-static int fs_error_increase(int32_t error){
+static int fs_error_increase(int32_t error)
+{
 	int32_t err; // s32_t
 	if(error >= 0)return(0);
 	if(error == SPIFFS_ERR_FULL)return(0);
