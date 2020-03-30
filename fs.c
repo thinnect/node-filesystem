@@ -129,6 +129,23 @@ int32_t fs_fstat(fs_fd fd, fs_stat *s)
 	return ret;
 }
 
+void fs_flush(fs_fd fd)
+{
+	platform_mutex_acquire(fs_mutex);
+	while(!fs_ready);
+	if(((fd >> 16) & 0xFF) != fs_mount_count)
+	{
+		warn1("stale fd");
+	}
+	else
+	{
+		spi_flash_lock();
+		SPIFFS_fflush(&fs_fs, (fd & 0xFFFF));
+		spi_flash_unlock();
+	}
+	platform_mutex_release(fs_mutex);
+}
+
 void fs_close(fs_fd fd)
 {
 	platform_mutex_acquire(fs_mutex);

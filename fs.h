@@ -71,6 +71,13 @@ int32_t fs_read(fs_fd fd, void *buf, int32_t count);
 int32_t fs_write(fs_fd fd, const void *buf, int32_t count);
 
 /**
+ * Flushes cached writes to flash.
+ *
+ * @param fd File descriptor
+ */
+void fs_flush(fs_fd fd);
+
+/**
  * Closes the file descriptor
  *
  * @param fd File descriptor
