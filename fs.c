@@ -77,7 +77,8 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 void fs_start()
 {
 	fs_queue = osMessageQueueNew(16, sizeof(void *), NULL);
-	osThreadNew(fs_thread, NULL, NULL);
+	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 16384 };
+	osThreadNew(fs_thread, NULL, &thread_attr);
 	// osMessageQueuePut(fs_queue, &fs_queue, 0, 0);
 }
 
@@ -231,9 +232,10 @@ static void fs_thread(void *p)
 	uint32_t total, used;
 	// spi_flash_mass_erase();
 	for (f = 0; f < FS_MAX; f++) {
+		if (!fs[f].driver)continue;
 		debug1("mounting fs #%d", f);
 		fs[f].driver->lock();
-		ret = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, 0);
+		ret = -15; // SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, 0);
 		if(ret != SPIFFS_OK)
 		{
 			debug1("formatting #%d", f);
@@ -302,49 +304,67 @@ static int fs_error_increase(int32_t error)
 
 static int32_t fs_read0(uint32_t addr, uint32_t size, uint8_t * dst)
 {
-	return fs[0].driver->read(fs[0].partition, addr, size, dst);
+	if (fs[0].driver->read(fs[0].partition, addr, size, dst) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_write0(uint32_t addr, uint32_t size, uint8_t * src)
 {
-	return fs[0].driver->write(fs[0].partition, addr, size, src);
+	if (fs[0].driver->write(fs[0].partition, addr, size, src) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_erase0(uint32_t addr, uint32_t size)
 {
-	return fs[0].driver->erase(fs[0].partition, addr, size);
+	if (fs[0].driver->erase(fs[0].partition, addr, size) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 #if FS_MAX > 0
 static int32_t fs_read1(uint32_t addr, uint32_t size, uint8_t * dst)
 {
-	return fs[1].driver->read(fs[1].partition, addr, size, dst);
+	if (fs[1].driver->read(fs[1].partition, addr, size, dst) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_write1(uint32_t addr, uint32_t size, uint8_t * src)
 {
-	return fs[1].driver->write(fs[1].partition, addr, size, src);
+	if (fs[1].driver->write(fs[1].partition, addr, size, src) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_erase1(uint32_t addr, uint32_t size)
 {
-	return fs[1].driver->erase(fs[1].partition, addr, size);
+	if (fs[1].driver->erase(fs[1].partition, addr, size) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 #endif
 #if FS_MAX > 1
 static int32_t fs_read2(uint32_t addr, uint32_t size, uint8_t * dst)
 {
-	return fs[2].driver->read(fs[2].partition, addr, size, dst);
+	if (fs[2].driver->read(fs[2].partition, addr, size, dst) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_write2(uint32_t addr, uint32_t size, uint8_t * src)
 {
-	return fs[2].driver->write(fs[2].partition, addr, size, src);
+	if (fs[2].driver->write(fs[2].partition, addr, size, src) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 
 static int32_t fs_erase2(uint32_t addr, uint32_t size)
 {
-	return fs[2].driver->erase(fs[2].partition, addr, size);
+	if (fs[2].driver->erase(fs[2].partition, addr, size) < 0)
+		return SPIFFS_ERR_INTERNAL;
+	return SPIFFS_OK;
 }
 #endif
 
