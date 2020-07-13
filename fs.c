@@ -26,11 +26,15 @@ struct fs_struct{
 	spiffs fs;
 	uint8_t work_buf[FS_SPIFFS_LOG_PAGE_SZ * 2];
 	uint8_t fds[32 * 4];
-}fs[FS_MAX];
+}fs[FS_MAX+1];
 
+#if 0 // Queueing is not implemented fully
 osMessageQueueId_t fs_queue;
 
 static void fs_thread(void *p);
+#endif
+
+static void fs_mount();
 
 static int32_t fs_read0(uint32_t addr, uint32_t size, uint8_t * dst);
 static int32_t fs_write0(uint32_t addr, uint32_t size, uint8_t * src);
@@ -76,10 +80,15 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 
 void fs_start()
 {
+#if 0
 	fs_queue = osMessageQueueNew(16, sizeof(void *), NULL);
 	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 16384 };
 	osThreadNew(fs_thread, NULL, &thread_attr);
-	// osMessageQueuePut(fs_queue, &fs_queue, 0, 0);
+	osMessageQueuePut(fs_queue, &fs_queue, 0, 0);
+#endif
+
+	// For now we just mount it in the current thread
+	fs_mount();
 }
 
 fs_fd fs_open(int f, char *path, uint32_t flags)
@@ -224,38 +233,52 @@ void fs_unlink(int f, char *path)
 	platform_mutex_release(fs[f].mutex);
 }
 
-static void fs_thread(void *p)
+static void fs_mount()
 {
-	int f;
-	int ret;
-	void *command;
-	uint32_t total, used;
-	// spi_flash_mass_erase();
-	for (f = 0; f < FS_MAX; f++) {
-		if (!fs[f].driver)continue;
+	for (int f = 0; f < FS_MAX; f++)
+	{
+		if (!fs[f].driver) continue;
+
+		platform_mutex_acquire(fs[f].mutex);
+
 		debug1("mounting fs #%d", f);
 		fs[f].driver->lock();
-		ret = -15; // SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, 0);
+
+		int ret = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
 		if(ret != SPIFFS_OK)
 		{
 			debug1("formatting #%d", f);
-			SPIFFS_format(&fs[f].fs);
-			SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, 0);
+			s32_t r = SPIFFS_format(&fs[f].fs);
+			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "fmt %d", (int)r);
+			r = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
+			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "mnt %d", (int)r);
 		}
+
+		uint32_t total, used;
 		ret = SPIFFS_info(&fs[f].fs, &total, &used);
 		fs[f].driver->unlock();
 		fs[f].mount_count++;
 		debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
 		fs[f].ready = 1;
-	}
-	while(1)
-	{
-		if(osMessageQueueGet(fs_queue, &command, NULL, 1000) != osOK)continue;
-		debug1("got message");
+
+		platform_mutex_release(fs[f].mutex);
 	}
 }
 
-/*
+#if 0 // Queueing is not implemented fully
+static void fs_thread(void *p)
+{
+	fs_mount();
+	while(1)
+	{
+		void * command;
+		if(osMessageQueueGet(fs_queue, &command, NULL, 1000) != osOK) continue;
+		debug1("got message");
+	}
+}
+#endif
+
+#if 0 // Error handling is not implemented fully
 static int fs_error_increase(int32_t error)
 {
 	int32_t err; // s32_t
@@ -300,7 +323,7 @@ static int fs_error_increase(int32_t error)
 	#endif//SPIFFS_CHECK_ENABLED
 	return(1);
 }
-*/
+#endif
 
 static int32_t fs_read0(uint32_t addr, uint32_t size, uint8_t * dst)
 {
