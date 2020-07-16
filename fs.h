@@ -1,5 +1,5 @@
 /**
- * Filesystem wrapper for SPIFFS
+ * Filesystem wrapper for SPIFFS.
  *
  * Copyright Thinnect Inc. 2020
  * @license MIT
@@ -133,7 +133,7 @@ int32_t fs_lseek(int f, fs_fd fd, int32_t offs, int whence);
  * @param fd File descriptor
  * @param s Buffer to store the information
  *
- * @return 0 or negative on error 
+ * @return 0 or negative on error
  */
 int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);
 
