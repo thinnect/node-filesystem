@@ -38,4 +38,4 @@
 [submodule "zoo/graphitemaster.incbin"]
 	path = zoo/graphitemaster.incbin
 	url = https://github.com/graphitemaster/incbin.git
-	branch = master
+	branch = main
