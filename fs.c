@@ -423,6 +423,6 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
 }
 #endif
 
-if FS_MAX > 2
+#if FS_MAX > 2
 	#error FS_MAX > 2
 #endif

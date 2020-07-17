@@ -35,7 +35,7 @@ BUILD_BASE_DIR          ?= build
 DEFAULT_BUILD_TARGET    ?= $(PROJECT_NAME)
 
 ROOT_DIR                ?= $(abspath .)
-ZOO                     ?= $(ROOT_DIR)/../..
+ZOO                     ?= $(ROOT_DIR)/../zoo
 
 # Silabs SDK location and version
 SILABS_SDKDIR           ?= $(HOME)/SimplicityStudio_v4/developer/sdks/gecko_sdk_suite/v2.7
@@ -141,11 +141,7 @@ INCLUDES += -I$(ROOT_DIR)/..
 SOURCES += $(ROOT_DIR)/../fs.c
 
 # Generally useful external tools
-INCLUDES += -I$(ZOO)/lammertb.libcrc/include \
-            -I$(ZOO)/jtbr.endianness \
-            -I$(ZOO)/graphitemaster.incbin
-SOURCES += $(ZOO)/lammertb.libcrc/src/crcccitt.c \
-           $(ZOO)/lammertb.libcrc/src/crc32.c
+INCLUDES += -I$(ZOO)/graphitemaster.incbin
 
 # watchdog, loggers, radio etc...
 INCLUDES += -I$(NODE_PLATFORM_DIR)/include
