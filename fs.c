@@ -393,6 +393,7 @@ static int32_t fs_erase1(uint32_t addr, uint32_t size)
 	return SPIFFS_OK;
 }
 #endif
+
 #if FS_MAX > 1
 static int32_t fs_read2(uint32_t addr, uint32_t size, uint8_t * dst)
 {
@@ -422,3 +423,6 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
 }
 #endif
 
+if FS_MAX > 2
+	#error FS_MAX > 2
+#endif
