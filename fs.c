@@ -258,21 +258,26 @@ static void fs_mount()
 		fs[f].driver->lock();
 
 		int ret = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
-		if(ret != SPIFFS_OK)
+		if(SPIFFS_OK != ret)
 		{
 			debug1("formatting #%d", f);
 			s32_t r = SPIFFS_format(&fs[f].fs);
 			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "fmt %d", (int)r);
 			r = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
 			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "mnt %d", (int)r);
+			ret = r;
 		}
 
-		uint32_t total, used;
-		ret = SPIFFS_info(&fs[f].fs, &total, &used);
+		if(SPIFFS_OK == ret)
+		{
+			uint32_t total, used;
+			ret = SPIFFS_info(&fs[f].fs, &total, &used);
+			debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
+			fs[f].ready = 1;
+		}
+
 		fs[f].driver->unlock();
 		fs[f].mount_count++;
-		debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
-		fs[f].ready = 1;
 
 		platform_mutex_release(fs[f].mutex);
 	}
