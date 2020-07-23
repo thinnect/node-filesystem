@@ -138,6 +138,7 @@ SOURCES += $(ZOO)/pellepl.spiffs/src/spiffs_cache.c \
 
 # filesystem
 INCLUDES += -I$(ROOT_DIR)/..
+INCLUDES += -I$(ROOT_DIR)/../config
 SOURCES += $(ROOT_DIR)/../fs.c
 
 # Generally useful external tools
