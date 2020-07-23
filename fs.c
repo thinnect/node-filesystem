@@ -1,3 +1,10 @@
+/**
+ * Filesystem wrapper for SPIFFS.
+ *
+ * Copyright Thinnect Inc. 2020
+ * @license MIT
+ */
+
 #include "fs.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -16,7 +23,8 @@
 #define FS_SPIFFS_LOG_PAGE_SZ  (128UL)
 #define FS_SPIFFS_LOG_BLOCK_SZ (32UL * 1024UL)
 
-struct fs_struct{
+struct fs_struct
+{
 	fs_driver_t *driver;
 	volatile int ready;
 	int partition;
@@ -26,7 +34,7 @@ struct fs_struct{
 	spiffs fs;
 	uint8_t work_buf[FS_SPIFFS_LOG_PAGE_SZ * 2];
 	uint8_t fds[32 * 4];
-}fs[FS_MAX+1];
+} fs[FS_MAX+1];
 
 #if 0 // Queueing is not implemented fully
 osMessageQueueId_t fs_queue;
@@ -59,18 +67,23 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 	fs[f].cfg.phys_erase_block = driver->erase_size(partition);
 	fs[f].cfg.log_block_size = FS_SPIFFS_LOG_BLOCK_SZ;
 	fs[f].cfg.log_page_size = FS_SPIFFS_LOG_PAGE_SZ;
-	if(f == 0){
+	if(f == 0)
+	{
 		fs[f].cfg.hal_read_f = fs_read0;
 		fs[f].cfg.hal_write_f = fs_write0;
 		fs[f].cfg.hal_erase_f = fs_erase0;
 #if FS_MAX > 0
-	}else if(f == 1){
+	}
+	else if (f == 1)
+	{
 		fs[f].cfg.hal_read_f = fs_read1;
 		fs[f].cfg.hal_write_f = fs_write1;
 		fs[f].cfg.hal_erase_f = fs_erase1;
 #endif
 #if FS_MAX > 1
-	}else if(f == 2){
+	}
+	else if (f == 2)
+	{
 		fs[f].cfg.hal_read_f = fs_read2;
 		fs[f].cfg.hal_write_f = fs_write2;
 		fs[f].cfg.hal_erase_f = fs_erase2;
@@ -245,21 +258,26 @@ static void fs_mount()
 		fs[f].driver->lock();
 
 		int ret = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
-		if(ret != SPIFFS_OK)
+		if(SPIFFS_OK != ret)
 		{
 			debug1("formatting #%d", f);
 			s32_t r = SPIFFS_format(&fs[f].fs);
 			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "fmt %d", (int)r);
 			r = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
 			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "mnt %d", (int)r);
+			ret = r;
 		}
 
-		uint32_t total, used;
-		ret = SPIFFS_info(&fs[f].fs, &total, &used);
+		if(SPIFFS_OK == ret)
+		{
+			uint32_t total, used;
+			ret = SPIFFS_info(&fs[f].fs, &total, &used);
+			debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
+			fs[f].ready = 1;
+		}
+
 		fs[f].driver->unlock();
 		fs[f].mount_count++;
-		debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
-		fs[f].ready = 1;
 
 		platform_mutex_release(fs[f].mutex);
 	}
@@ -328,21 +346,27 @@ static int fs_error_increase(int32_t error)
 static int32_t fs_read0(uint32_t addr, uint32_t size, uint8_t * dst)
 {
 	if (fs[0].driver->read(fs[0].partition, addr, size, dst) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_write0(uint32_t addr, uint32_t size, uint8_t * src)
 {
 	if (fs[0].driver->write(fs[0].partition, addr, size, src) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_erase0(uint32_t addr, uint32_t size)
 {
 	if (fs[0].driver->erase(fs[0].partition, addr, size) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
@@ -350,44 +374,60 @@ static int32_t fs_erase0(uint32_t addr, uint32_t size)
 static int32_t fs_read1(uint32_t addr, uint32_t size, uint8_t * dst)
 {
 	if (fs[1].driver->read(fs[1].partition, addr, size, dst) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_write1(uint32_t addr, uint32_t size, uint8_t * src)
 {
 	if (fs[1].driver->write(fs[1].partition, addr, size, src) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_erase1(uint32_t addr, uint32_t size)
 {
 	if (fs[1].driver->erase(fs[1].partition, addr, size) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 #endif
+
 #if FS_MAX > 1
 static int32_t fs_read2(uint32_t addr, uint32_t size, uint8_t * dst)
 {
 	if (fs[2].driver->read(fs[2].partition, addr, size, dst) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_write2(uint32_t addr, uint32_t size, uint8_t * src)
 {
 	if (fs[2].driver->write(fs[2].partition, addr, size, src) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 
 static int32_t fs_erase2(uint32_t addr, uint32_t size)
 {
 	if (fs[2].driver->erase(fs[2].partition, addr, size) < 0)
+	{
 		return SPIFFS_ERR_INTERNAL;
+	}
 	return SPIFFS_OK;
 }
 #endif
 
+#if FS_MAX > 2
+	#error FS_MAX > 2
+#endif

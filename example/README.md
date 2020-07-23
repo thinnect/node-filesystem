@@ -10,6 +10,7 @@ Build the application with `make PLATFORM`.
 
 Tested platforms:
  * tsb0
+ * tsb2
 
 # Test result
 

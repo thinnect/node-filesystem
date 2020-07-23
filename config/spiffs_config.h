@@ -1,5 +1,5 @@
 /*
- * spiffs_config.h for CU001
+ * A common spiffs_config.h variant for non-singleton operation.
  */
 
 #ifndef SPIFFS_CONFIG_H_
@@ -211,13 +211,13 @@ typedef uint8_t u8_t;
 // Instead of giving parameters in config struct, singleton build must
 // give parameters in defines below.
 #ifndef SPIFFS_CFG_PHYS_SZ
-#define SPIFFS_CFG_PHYS_SZ(ignore)        ((8UL*1024UL*1024UL)-(1024UL*1024UL))
+#define SPIFFS_CFG_PHYS_SZ(ignore)        (8UL*64UL*1024UL)
 #endif
 #ifndef SPIFFS_CFG_PHYS_ERASE_SZ
-#define SPIFFS_CFG_PHYS_ERASE_SZ(ignore)  (4UL*1024UL)
+#define SPIFFS_CFG_PHYS_ERASE_SZ(ignore)  (8UL*1024UL)
 #endif
 #ifndef SPIFFS_CFG_PHYS_ADDR
-#define SPIFFS_CFG_PHYS_ADDR(ignore)      (1024UL*1024UL)
+#define SPIFFS_CFG_PHYS_ADDR(ignore)      (512UL*1024UL)
 #endif
 #ifndef SPIFFS_CFG_LOG_PAGE_SZ
 #define SPIFFS_CFG_LOG_PAGE_SZ(ignore)    (128UL)

@@ -1,0 +1,41 @@
+[submodule "zoo/pellepl.spiffs"]
+	path = zoo/pellepl.spiffs
+	url = https://github.com/pellepl/spiffs.git
+	branch = master
+
+[submodule "zoo/FreeRTOS-Kernel"]
+	path = zoo/FreeRTOS-Kernel
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel
+	branch = master
+
+[submodule "zoo/thinnect.node-buildsystem"]
+	path = zoo/thinnect.node-buildsystem
+	url = https://github.com/thinnect/node-buildsystem.git
+	branch = master
+[submodule "zoo/thinnect.node-platform"]
+	path = zoo/thinnect.node-platform
+	url = https://github.com/thinnect/node-platform.git
+	branch = newmaster
+[submodule "zoo/thinnect.lll"]
+	path = zoo/thinnect.lll
+	url = https://github.com/thinnect/lll.git
+	branch = master
+
+[submodule "zoo/thinnect.dev-platforms"]
+	path = zoo/thinnect.dev-platforms
+	url = git@github.com:thinnect/dev-platforms.git
+	branch = master
+
+[submodule "zoo/thinnect.cmsis-freertos"]
+	path = zoo/thinnect.cmsis-freertos
+	url = https://github.com/thinnect/cmsis-freertos
+	branch = master
+[submodule "zoo/thinnect.cmsis-ext"]
+	path = zoo/thinnect.cmsis-ext
+	url = git@github.com:thinnect/cmsis-ext.git
+	branch = dev
+
+[submodule "zoo/graphitemaster.incbin"]
+	path = zoo/graphitemaster.incbin
+	url = https://github.com/graphitemaster/incbin.git
+	branch = main

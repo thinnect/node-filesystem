@@ -1,10 +1,9 @@
 /**
- * Filesystem wrapper for SPIFFS
+ * Filesystem wrapper for SPIFFS.
  *
  * Copyright Thinnect Inc. 2020
  * @license MIT
  */
-
 #ifndef _FS_H_
 #define _FS_H_
 
@@ -24,7 +23,8 @@
 
 #define FS_ERR_REFORMATTED (-70000)
 
-struct fs_driver_struct{
+struct fs_driver_struct
+{
 	int32_t(*read)(int partition, uint32_t addr, uint32_t size, uint8_t * dst);
 	int32_t(*write)(int partition, uint32_t addr, uint32_t size, uint8_t * src);
 	int32_t(*erase)(int partition, uint32_t addr, uint32_t size);
@@ -133,9 +133,8 @@ int32_t fs_lseek(int f, fs_fd fd, int32_t offs, int whence);
  * @param fd File descriptor
  * @param s Buffer to store the information
  *
- * @return 0 or negative on error 
+ * @return 0 or negative on error
  */
 int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);
 
-#endif
-
+#endif//_FS_H_
