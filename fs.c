@@ -283,8 +283,8 @@ void fs_close(int f, fs_fd fd)
 
 void fs_unlink(int f, char *path)
 {
-	platform_mutex_acquire(fs[f].mutex);
 	fs_abort_suspend(f);
+	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	fs[f].driver->lock();
 	debug1("unlink: %s", path);
