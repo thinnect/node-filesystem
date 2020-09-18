@@ -30,6 +30,7 @@ struct fs_driver_struct
 	int32_t(*erase)(int partition, uint32_t addr, uint32_t size);
 	int32_t(*size)(int partition);
 	int32_t(*erase_size)(int partition);
+	void (*suspend)();
 	void (*lock)();
 	void (*unlock)();
 };

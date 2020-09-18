@@ -1,6 +1,18 @@
 /**
  * Filesystem wrapper for SPIFFS.
  *
+ * Suspend functionality:
+ * If FS_MANAGE_FLASH_SLEEP is defined, after accessing a filesystem, the fs
+ * will start a timer and after it expires, will suspend the underlying
+ * flash device. The requirement here is that resume is automatic. The flow is
+ * to first lock the device, then suspend it, then unlock. If the same device
+ * is used for multiple filesystems, then it is possible that suspend is called
+ * multiple times or suspend is called even though a different filesystem is
+ * being actively accessed, causing additional delay from the unneccessary
+ * suspend-resume cycle. Also, if the flash device is accessed externally,
+ * then it must also be suspended externally, otherwise it will take until the
+ * next fs access for it to be suspended again.
+ *
  * Copyright Thinnect Inc. 2020
  * @license MIT
  */
@@ -8,17 +20,20 @@
 #include "fs.h"
 #include <stdio.h>
 #include <stdint.h>
-#include "cmsis_os2.h"
 #include "platform_mutex.h"
 #include "spi_flash.h"
 #include "spiffs.h"
 #include "loglevels.h"
 
+#ifdef FS_MANAGE_FLASH_SLEEP
+#include "cmsis_os2.h"
+#endif//FS_MANAGE_FLASH_SLEEP
+
 #define __MODUUL__ "fs"
 #define __LOG_LEVEL__ (LOG_LEVEL_fs & BASE_LOG_LEVEL)
 #include "log.h"
 
-#define FS_MAX                 2
+#define FS_MAX_COUNT 3
 
 #define FS_SPIFFS_LOG_PAGE_SZ  (128UL)
 #define FS_SPIFFS_LOG_BLOCK_SZ (32UL * 1024UL)
@@ -34,13 +49,20 @@ struct fs_struct
 	spiffs fs;
 	uint8_t work_buf[FS_SPIFFS_LOG_PAGE_SZ * 2];
 	uint8_t fds[32 * 4];
-} fs[FS_MAX+1];
+};
 
-#if 0 // Queueing is not implemented fully
-osMessageQueueId_t fs_queue;
+static struct fs_struct fs[FS_MAX_COUNT];
 
+#ifdef FS_MANAGE_FLASH_SLEEP
+#define FS_THREAD_FLAGS_ALL 0x7FFFFFFF
+static osTimerId_t  m_sleep_timers[FS_MAX_COUNT];
+static osThreadId_t m_thread_id;
 static void fs_thread(void *p);
-#endif
+static void fs_suspend_timer_cb(void * arg);
+#endif//FS_MANAGE_FLASH_SLEEP
+
+static void fs_plan_suspend(int f);
+static void fs_abort_suspend(int f);
 
 static void fs_mount();
 
@@ -72,7 +94,7 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 		fs[f].cfg.hal_read_f = fs_read0;
 		fs[f].cfg.hal_write_f = fs_write0;
 		fs[f].cfg.hal_erase_f = fs_erase0;
-#if FS_MAX > 0
+#if FS_MAX_COUNT > 1
 	}
 	else if (f == 1)
 	{
@@ -80,7 +102,7 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 		fs[f].cfg.hal_write_f = fs_write1;
 		fs[f].cfg.hal_erase_f = fs_erase1;
 #endif
-#if FS_MAX > 1
+#if FS_MAX_COUNT > 2
 	}
 	else if (f == 2)
 	{
@@ -89,16 +111,21 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 		fs[f].cfg.hal_erase_f = fs_erase2;
 #endif
 	}
+
+#ifdef FS_MANAGE_FLASH_SLEEP
+	if(f < FS_MAX_COUNT)
+	{
+		m_sleep_timers[f] = osTimerNew(&fs_suspend_timer_cb, osTimerOnce, (void*)(intptr_t)f, NULL);
+	}
+#endif
 }
 
 void fs_start()
 {
-#if 0
-	fs_queue = osMessageQueueNew(16, sizeof(void *), NULL);
-	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 16384 };
-	osThreadNew(fs_thread, NULL, &thread_attr);
-	osMessageQueuePut(fs_queue, &fs_queue, 0, 0);
-#endif
+#ifdef FS_MANAGE_FLASH_SLEEP
+	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 1024 };
+	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
+#endif//FS_MANAGE_FLASH_SLEEP
 
 	// For now we just mount it in the current thread
 	fs_mount();
@@ -108,6 +135,8 @@ fs_fd fs_open(int f, char *path, uint32_t flags)
 {
 	spiffs_file sfd;
 	fs_fd fd;
+
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	fs[f].driver->lock();
@@ -115,6 +144,7 @@ fs_fd fs_open(int f, char *path, uint32_t flags)
 	sfd = SPIFFS_open(&fs[f].fs, path, flags, 0);
 	fs[f].driver->unlock();
 	fd = (fs[f].mount_count << 16) | sfd;
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 	if(sfd < 0)
 	{
@@ -126,6 +156,8 @@ fs_fd fs_open(int f, char *path, uint32_t flags)
 int32_t fs_read(int f, fs_fd fd, void *buf, int32_t len)
 {
 	int32_t ret;
+
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -138,6 +170,7 @@ int32_t fs_read(int f, fs_fd fd, void *buf, int32_t len)
 		ret = SPIFFS_read(&fs[f].fs, (fd & 0xFFFF), buf, len);
 		fs[f].driver->unlock();
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 	return ret;
 }
@@ -145,6 +178,8 @@ int32_t fs_read(int f, fs_fd fd, void *buf, int32_t len)
 int32_t fs_write(int f, fs_fd fd, const void *buf, int32_t len)
 {
 	int32_t ret;
+
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -157,6 +192,7 @@ int32_t fs_write(int f, fs_fd fd, const void *buf, int32_t len)
 		ret = SPIFFS_write(&fs[f].fs, (fd & 0xFFFF), (void *)buf, len);
 		fs[f].driver->unlock();
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 	return ret;
 }
@@ -164,6 +200,8 @@ int32_t fs_write(int f, fs_fd fd, const void *buf, int32_t len)
 int32_t fs_lseek(int f, fs_fd fd, int32_t offs, int whence)
 {
 	int32_t ret;
+
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -176,6 +214,7 @@ int32_t fs_lseek(int f, fs_fd fd, int32_t offs, int whence)
 		ret = SPIFFS_lseek(&fs[f].fs, (fd & 0xFFFF), offs, whence);
 		fs[f].driver->unlock();
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 	return ret;
 }
@@ -184,6 +223,8 @@ int32_t fs_fstat(int f, fs_fd fd, fs_stat *s)
 {
 	int32_t ret;
 	spiffs_stat stat;
+
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -197,12 +238,14 @@ int32_t fs_fstat(int f, fs_fd fd, fs_stat *s)
 		fs[f].driver->unlock();
 		s->size = stat.size;
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 	return ret;
 }
 
 void fs_flush(int f, fs_fd fd)
 {
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -215,11 +258,13 @@ void fs_flush(int f, fs_fd fd)
 		SPIFFS_fflush(&fs[f].fs, (fd & 0xFFFF));
 		fs[f].driver->unlock();
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 }
 
 void fs_close(int f, fs_fd fd)
 {
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	if(((fd >> 16) & 0xFF) != fs[f].mount_count)
@@ -232,26 +277,30 @@ void fs_close(int f, fs_fd fd)
 		SPIFFS_close(&fs[f].fs, (fd & 0xFFFF));
 		fs[f].driver->unlock();
 	}
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 }
 
 void fs_unlink(int f, char *path)
 {
+	fs_abort_suspend(f);
 	platform_mutex_acquire(fs[f].mutex);
 	while(!fs[f].ready);
 	fs[f].driver->lock();
 	debug1("unlink: %s", path);
 	SPIFFS_remove(&fs[f].fs, path);
 	fs[f].driver->unlock();
+	fs_plan_suspend(f);
 	platform_mutex_release(fs[f].mutex);
 }
 
 static void fs_mount()
 {
-	for (int f = 0; f < FS_MAX; f++)
+	for (int f = 0; f < FS_MAX_COUNT; f++)
 	{
 		if (!fs[f].driver) continue;
 
+		fs_abort_suspend(f);
 		platform_mutex_acquire(fs[f].mutex);
 
 		debug1("mounting fs #%d", f);
@@ -279,22 +328,55 @@ static void fs_mount()
 		fs[f].driver->unlock();
 		fs[f].mount_count++;
 
+		fs_plan_suspend(f);
 		platform_mutex_release(fs[f].mutex);
 	}
 }
 
-#if 0 // Queueing is not implemented fully
-static void fs_thread(void *p)
+#ifdef FS_MANAGE_FLASH_SLEEP
+
+static void fs_suspend_timer_cb(void * arg)
 {
-	fs_mount();
-	while(1)
+	int f = (intptr_t)arg;
+	osThreadFlagsSet(m_thread_id, 1 << f);
+}
+
+static void fs_thread(void * p)
+{
+	for (;;)
 	{
-		void * command;
-		if(osMessageQueueGet(fs_queue, &command, NULL, 1000) != osOK) continue;
-		debug1("got message");
+		uint32_t flags = osThreadFlagsWait(FS_THREAD_FLAGS_ALL, osFlagsWaitAny, osWaitForever);
+		for (int f=0; f<FS_MAX_COUNT; f++)
+		{
+			if (flags & (1 << f))
+			{
+				platform_mutex_acquire(fs[f].mutex);
+				fs[f].driver->lock();
+				if (NULL != fs[f].driver->suspend)
+				{
+					fs[f].driver->suspend();
+				}
+				fs[f].driver->unlock();
+				platform_mutex_release(fs[f].mutex);
+			}
+		}
 	}
 }
-#endif
+#endif//FS_MANAGE_FLASH_SLEEP
+
+static void fs_plan_suspend(int f)
+{
+	#ifdef FS_MANAGE_FLASH_SLEEP
+		osTimerStart(m_sleep_timers[f], 100);
+	#endif//FS_MANAGE_FLASH_SLEEP
+}
+
+static void fs_abort_suspend(int f)
+{
+	#ifdef FS_MANAGE_FLASH_SLEEP
+		osTimerStop(m_sleep_timers[f]);
+	#endif//FS_MANAGE_FLASH_SLEEP
+}
 
 #if 0 // Error handling is not implemented fully
 static int fs_error_increase(int32_t error)
@@ -370,7 +452,7 @@ static int32_t fs_erase0(uint32_t addr, uint32_t size)
 	return SPIFFS_OK;
 }
 
-#if FS_MAX > 0
+#if FS_MAX_COUNT > 1
 static int32_t fs_read1(uint32_t addr, uint32_t size, uint8_t * dst)
 {
 	if (fs[1].driver->read(fs[1].partition, addr, size, dst) < 0)
@@ -399,7 +481,7 @@ static int32_t fs_erase1(uint32_t addr, uint32_t size)
 }
 #endif
 
-#if FS_MAX > 1
+#if FS_MAX_COUNT > 2
 static int32_t fs_read2(uint32_t addr, uint32_t size, uint8_t * dst)
 {
 	if (fs[2].driver->read(fs[2].partition, addr, size, dst) < 0)
@@ -428,6 +510,6 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
 }
 #endif
 
-#if FS_MAX > 2
-	#error FS_MAX > 2
+#if FS_MAX_COUNT > 3
+	#error FS_MAX_COUNT > 3
 #endif
