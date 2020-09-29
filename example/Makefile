@@ -114,8 +114,9 @@ SOURCES += \
     $(SILABS_SDKDIR)/platform/emlib/src/em_msc.c \
     $(SILABS_SDKDIR)/platform/emlib/src/em_timer.c \
     $(SILABS_SDKDIR)/platform/emdrv/sleep/src/sleep.c \
-    $(NODE_PLATFORM_DIR)/silabs/platform_mutex.c \
-    $(NODE_PLATFORM_DIR)/common/spi_flash.c
+    $(NODE_PLATFORM_DIR)/common/platform_mutex.c \
+    $(NODE_PLATFORM_DIR)/common/spi_flash.c \
+    $(NODE_PLATFORM_DIR)/silabs/logger_fwrite_basic.c
 
 # logging
 #CFLAGS += -DLOGGER_TIMESTAMP
@@ -126,6 +127,9 @@ CFLAGS  += -DLOGGER_LDMA
 SOURCES += $(NODE_PLATFORM_DIR)/silabs/logger_ldma.c
 SOURCES += $(ZOO)/thinnect.lll/logging/loggers_ext.c
 INCLUDES += -I$(ZOO)/thinnect.lll/logging
+
+INCLUDES += -I$(NODE_PLATFORM_DIR)/widgets
+SOURCES += $(NODE_PLATFORM_DIR)/widgets/basic_rtos_logger_setup.c
 
 # spiffs
 INCLUDES += -I$(ZOO)/pellepl.spiffs/src
@@ -140,6 +144,7 @@ SOURCES += $(ZOO)/pellepl.spiffs/src/spiffs_cache.c \
 INCLUDES += -I$(ROOT_DIR)/..
 INCLUDES += -I$(ROOT_DIR)/../config
 SOURCES += $(ROOT_DIR)/../fs.c
+SOURCES += $(ROOT_DIR)/../rw_fs_record.c
 
 # Generally useful external tools
 INCLUDES += -I$(ZOO)/graphitemaster.incbin
