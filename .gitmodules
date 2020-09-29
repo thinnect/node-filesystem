@@ -39,3 +39,6 @@
 	path = zoo/graphitemaster.incbin
 	url = https://github.com/graphitemaster/incbin.git
 	branch = main
+[submodule "zoo/silabs.sdk"]
+	path = zoo/silabs.sdk
+	url = git@bitbucket.org:thinnect/silabs_sdk.git

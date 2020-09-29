@@ -34,6 +34,12 @@ This project contains code for the Filesystem abstraction layer.
 ## Return information about a file
 `int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);`
 
+## Write one data record to the file
+`int32_t fs_write_record (int partition, const char * p_file_name, const void * p_value, int32_t len)`
+
+## Read one data record from the file
+`int32_t fs_read_record (int partition, const char * p_file_name, const void * p_value, int32_t len)`
+
 # Dependencies / submodules
 
 Thinnect LowLevelLogging (submodule, MIT license)

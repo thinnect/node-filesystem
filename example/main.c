@@ -147,13 +147,13 @@ static void test_fs_record (int fs_id)
 
     const char test_data[] = "HelloWorld!";
 
-    if (sizeof(test_data) != fs_write_record ("helloworld.txt", test_data, sizeof(test_data)))
+    if (sizeof(test_data) != fs_write_record (fs_id, "helloworld.txt", test_data, sizeof(test_data)))
     {
         err1("BAD record length on write");
     }
 
     char buffer[sizeof(test_data)];
-    if (sizeof(buffer) != fs_read_record ("helloworld.txt", buffer, sizeof(buffer)))
+    if (sizeof(buffer) != fs_read_record (fs_id, "helloworld.txt", buffer, sizeof(buffer)))
     {
         err1("BAD record length on read");
     }
