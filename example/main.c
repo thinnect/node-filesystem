@@ -11,8 +11,6 @@
 
 #include "cmsis_os2_ext.h"
 
-#include "retargetserial.h"
-
 #include "platform.h"
 #include "retargetspi.h"
 
@@ -21,12 +19,9 @@
 #include "spi_flash.h"
 #include "fs.h"
 
-#include "loggers_ext.h"
-#if defined(LOGGER_LDMA)
-#include "logger_ldma.h"
-#elif defined(LOGGER_FWRITE)
-#include "logger_fwrite.h"
-#endif//LOGGER_*
+#include "basic_rtos_logger_setup.h"
+
+#include "rw_fs_record.h"
 
 #include "loglevels.h"
 #define __MODUUL__ "main"
@@ -41,30 +36,15 @@
 #include "incbin.h"
 INCBIN(Header, "header.bin");
 
-static const char m_test_data[] = "ABCDEFGH";
-
 static fs_driver_t m_fs_driver;
+
+static void test_fs_direct (int fs_id);
+static void test_fs_record (int fs_id);
 
 void main_loop (void * arg)
 {
     // Switch to a thread-safe logger
-    #if defined(LOGGER_LDMA)
-        logger_ldma_init();
-        #if defined(LOGGER_TIMESTAMP)
-            log_init(BASE_LOG_LEVEL, &logger_ldma, &osCounterGetMilli);
-        #else
-            log_init(BASE_LOG_LEVEL, &logger_ldma, NULL);
-        #endif
-    #elif defined(LOGGER_FWRITE)
-        logger_fwrite_init();
-        #if defined(LOGGER_TIMESTAMP)
-            log_init(BASE_LOG_LEVEL, &logger_fwrite, &osCounterGetMilli);
-        #else
-            log_init(BASE_LOG_LEVEL, &logger_fwrite, NULL);
-        #endif
-    #else
-        #warning "No LOGGER_* has been defined!"
-    #endif//LOGGER_*
+    basic_rtos_logger_setup();
 
     RETARGET_SpiInit();
     spi_flash_init();
@@ -101,6 +81,7 @@ void main_loop (void * arg)
     m_fs_driver.erase = spi_flash_erase;
     m_fs_driver.size = spi_flash_size;
     m_fs_driver.erase_size = spi_flash_erase_size;
+    m_fs_driver.suspend = spi_flash_suspend;
     m_fs_driver.lock = spi_flash_lock;
     m_fs_driver.unlock = spi_flash_unlock;
 
@@ -108,12 +89,28 @@ void main_loop (void * arg)
     fs_init(fs_id, DATAFLASH_SPIFFS_PARTITION, &m_fs_driver);
     fs_start();
 
+    test_fs_direct(fs_id);
+
+    test_fs_record(fs_id);
+
+    for (;;)
+    {
+        osDelay(1000);
+    }
+}
+
+static void test_fs_direct (int fs_id)
+{
+    info1("TEST: test_fs_direct");
+
+    const char test_data[] = "ABCDEFGH";
+
     debug1("creating file...");
     fs_fd fd = fs_open(fs_id, "test.txt", FS_TRUNC | FS_CREAT | FS_RDWR);
     debug1("FD: %d\n", (int)fd);
 
     debug1("writing file...");
-    int32_t retw = fs_write(fs_id, fd, m_test_data, strlen(m_test_data));
+    int32_t retw = fs_write(fs_id, fd, test_data, strlen(test_data));
     debug1("RET: %d\n", (int)retw);
 
     debug1("closing file...");
@@ -124,37 +121,51 @@ void main_loop (void * arg)
     debug1("FD: %d\n", (int)fd);
 
     debug1("reading file...");
-    char buffer[sizeof(m_test_data)];
-    int32_t retr = fs_read(fs_id, fd, buffer, strlen(m_test_data));
+    char buffer[sizeof(test_data)];
+    int32_t retr = fs_read(fs_id, fd, buffer, strlen(test_data));
     debug1("RET: %d\n", (int)retr);
 
     debug1("closing file...");
     fs_close(fs_id, fd);
 
-    buffer[strlen(m_test_data)] = '\0';
+    buffer[strlen(test_data)] = '\0';
     debug1("data: %s", buffer);
 
-    if (0 == memcmp(m_test_data, buffer, sizeof(m_test_data)))
+    if (0 == memcmp(test_data, buffer, sizeof(test_data)))
     {
-        info1("GOOD DATA");
+        info1("GOOD DATA: %s", buffer);
     }
     else
     {
         err1("BAD DATA");
     }
-
-    for (;;)
-    {
-        osDelay(1000);
-    }
 }
 
-// Basic logger before kernel boot
-int logger_fwrite_boot (const char *ptr, int len)
+static void test_fs_record (int fs_id)
 {
-    fwrite(ptr, len, 1, stdout);
-    fflush(stdout);
-    return len;
+    info1("TEST: test_fs_record");
+
+    const char test_data[] = "HelloWorld!";
+
+    if (sizeof(test_data) != fs_write_record (fs_id, "helloworld.txt", test_data, sizeof(test_data)))
+    {
+        err1("BAD record length on write");
+    }
+
+    char buffer[sizeof(test_data)];
+    if (sizeof(buffer) != fs_read_record (fs_id, "helloworld.txt", buffer, sizeof(buffer)))
+    {
+        err1("BAD record length on read");
+    }
+
+    if (0 == memcmp(test_data, buffer, sizeof(test_data)))
+    {
+        info1("GOOD DATA: %s", buffer);
+    }
+    else
+    {
+        err1("BAD DATA");
+    }
 }
 
 int main ()
@@ -166,8 +177,7 @@ int main ()
 
     PLATFORM_LedsSet(0); // Indicate: starting OS
 
-    RETARGET_SerialInit();
-    log_init(BASE_LOG_LEVEL, &logger_fwrite_boot, NULL);
+    basic_noos_logger_setup();
 
     info1("filesystem demo");
 

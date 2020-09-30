@@ -3,7 +3,8 @@
 
 #include "logger.h"
 
-#define LOG_LEVEL_main             LOG_LEVEL_DEBUG
-#define LOG_LEVEL_fs               LOG_LEVEL_DEBUG
+#define LOG_LEVEL_main                  LOG_LEVEL_DEBUG
+#define LOG_LEVEL_fs                    LOG_LEVEL_DEBUG
+#define LOG_LEVEL_FileSystemReadWrite   LOG_LEVEL_DEBUG
 
 #endif
