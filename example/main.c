@@ -37,9 +37,17 @@
 INCBIN(Header, "header.bin");
 
 static fs_driver_t m_fs_driver;
+static int m_fs_id;
+const char m_test_data_rec[] = "HelloWorld!";
+char m_buffer_rec[sizeof(m_test_data_rec)];
 
 static void test_fs_direct (int fs_id);
 static void test_fs_record (int fs_id);
+
+static void callback1 (int32_t res);
+static void callback2 (int32_t res);
+
+extern void start_fs_rw_thread ();
 
 void main_loop (void * arg)
 {
@@ -72,8 +80,8 @@ void main_loop (void * arg)
         err1("not sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
     }
 
-    debug1("performing mass-erase");
-    spi_flash_mass_erase();
+    //debug1("performing mass-erase");
+    //spi_flash_mass_erase();
 
     debug1("initializing filesystem...");
     m_fs_driver.read = spi_flash_read;
@@ -141,30 +149,41 @@ static void test_fs_direct (int fs_id)
     }
 }
 
-static void test_fs_record (int fs_id)
+static void callback1 (int32_t res)
 {
-    info1("TEST: test_fs_record");
+    debug1("Callback1:%d", res);
 
-    const char test_data[] = "HelloWorld!";
-
-    if (sizeof(test_data) != fs_write_record (fs_id, "helloworld.txt", test_data, sizeof(test_data)))
-    {
-        err1("BAD record length on write");
-    }
-
-    char buffer[sizeof(test_data)];
-    if (sizeof(buffer) != fs_read_record (fs_id, "helloworld.txt", buffer, sizeof(buffer)))
+    if (sizeof(m_buffer_rec) != fs_read_record(m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), callback2))
     {
         err1("BAD record length on read");
     }
+}
 
-    if (0 == memcmp(test_data, buffer, sizeof(test_data)))
+static void callback2 (int32_t res)
+{
+    debug1("Callback2:%d", res);
+
+    if (0 == memcmp(m_test_data_rec, m_buffer_rec, sizeof(m_test_data_rec)))
     {
-        info1("GOOD DATA: %s", buffer);
+        info1("GOOD DATA: %s", m_buffer_rec);
     }
     else
     {
         err1("BAD DATA");
+    }
+}
+
+static void test_fs_record (int fs_id)
+{
+    m_fs_id = fs_id;
+
+    info1("TEST: test_fs_record");
+    
+    start_fs_rw_thread();
+
+    if (sizeof(m_test_data_rec) != fs_write_record (m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), callback1))
+    {
+        err1("BAD record length on write");
     }
 }
 
