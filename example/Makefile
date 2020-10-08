@@ -144,7 +144,6 @@ SOURCES += $(ZOO)/pellepl.spiffs/src/spiffs_cache.c \
 INCLUDES += -I$(ROOT_DIR)/..
 INCLUDES += -I$(ROOT_DIR)/../config
 SOURCES += $(ROOT_DIR)/../fs.c
-SOURCES += $(ROOT_DIR)/../rw_fs_record.c
 
 # Generally useful external tools
 INCLUDES += -I$(ZOO)/graphitemaster.incbin

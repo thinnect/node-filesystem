@@ -25,9 +25,7 @@
 #include "spiffs.h"
 #include "loglevels.h"
 
-#ifdef FS_MANAGE_FLASH_SLEEP
 #include "cmsis_os2.h"
-#endif//FS_MANAGE_FLASH_SLEEP
 
 #define __MODUUL__ "fs"
 #define __LOG_LEVEL__ (LOG_LEVEL_fs & BASE_LOG_LEVEL)
@@ -37,6 +35,9 @@
 
 #define FS_SPIFFS_LOG_PAGE_SZ  (128UL)
 #define FS_SPIFFS_LOG_BLOCK_SZ (32UL * 1024UL)
+
+#define MAX_Q_WR_COUNT 3
+#define MAX_Q_RD_COUNT 3
 
 struct fs_struct
 {
@@ -54,12 +55,22 @@ struct fs_struct
 static struct fs_struct fs[FS_MAX_COUNT];
 
 #ifdef FS_MANAGE_FLASH_SLEEP
-#define FS_THREAD_FLAGS_ALL 0x7FFFFFFF
 static osTimerId_t  m_sleep_timers[FS_MAX_COUNT];
-static osThreadId_t m_thread_id;
-static void fs_thread(void *p);
 static void fs_suspend_timer_cb(void * arg);
 #endif//FS_MANAGE_FLASH_SLEEP
+
+#define FS_THREAD_FLAGS_ALL 0x7FFFFFFFU
+#define FS_SUSPENDFLAGS     0x00000007U
+
+// define read/write flags after filesystem suspend timer flags
+#define FS_WRITE_FLAG       (0x01 << FS_MAX_COUNT)
+#define FS_READ_FLAG        (0x01 << (FS_MAX_COUNT + 1))
+
+static osThreadId_t m_thread_id;
+static osMessageQueueId_t m_wr_queue_id;
+static osMessageQueueId_t m_rd_queue_id;
+
+static void fs_thread(void *p);
 
 static void fs_plan_suspend(int f);
 static void fs_abort_suspend(int f);
@@ -122,12 +133,16 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 
 void fs_start()
 {
-#ifdef FS_MANAGE_FLASH_SLEEP
 	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 1024 };
 	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
-#endif//FS_MANAGE_FLASH_SLEEP
 
-	// For now we just mount it in the current thread
+    const osMessageQueueAttr_t wr_q_attr = { .name = "fs_wr_q" };
+    m_wr_queue_id = osMessageQueueNew(MAX_Q_WR_COUNT, sizeof(fs_rw_params_t), &wr_q_attr);
+
+    const osMessageQueueAttr_t rd_q_attr = { .name = "fs_rd_q" };
+    m_wr_queue_id = osMessageQueueNew(MAX_Q_RD_COUNT, sizeof(fs_rw_params_t), &rd_q_attr);
+
+    // For now we just mount it in the current thread
 	fs_mount();
 }
 
@@ -142,6 +157,7 @@ fs_fd fs_open(int f, char *path, uint32_t flags)
 	fs[f].driver->lock();
 	debug1("open %d: %s", f, path);
 	sfd = SPIFFS_open(&fs[f].fs, path, flags, 0);
+    debug1("sfd:%d", sfd);
 	fs[f].driver->unlock();
 	fd = (fs[f].mount_count << 16) | sfd;
 	fs_plan_suspend(f);
@@ -340,29 +356,122 @@ static void fs_suspend_timer_cb(void * arg)
 	int f = (intptr_t)arg;
 	osThreadFlagsSet(m_thread_id, 1 << f);
 }
+#endif//FS_MANAGE_FLASH_SLEEP
 
 static void fs_thread(void * p)
 {
+    osStatus_t res;
+    fs_rw_params_t params;
+    fs_fd file_desc;
+    int32_t fs_res;
+
+    debug1("Thread starts");
+
 	for (;;)
 	{
 		uint32_t flags = osThreadFlagsWait(FS_THREAD_FLAGS_ALL, osFlagsWaitAny, osWaitForever);
-		for (int f=0; f<FS_MAX_COUNT; f++)
-		{
-			if (flags & (1 << f))
-			{
-				platform_mutex_acquire(fs[f].mutex);
-				fs[f].driver->lock();
-				if (NULL != fs[f].driver->suspend)
-				{
-					fs[f].driver->suspend();
-				}
-				fs[f].driver->unlock();
-				platform_mutex_release(fs[f].mutex);
-			}
-		}
+
+        debug1("ThrFlgs:0x%X", flags);
+
+        if (flags & FS_WRITE_FLAG)
+        {
+            debug1("Wr Thread");
+            // wait parameter is set to 0 to avoid thread blocking because there should be data in the queue
+            res = osMessageQueueGet(m_wr_queue_id, (void*)&params, NULL, 0); 
+            switch (res)
+            {
+                case osOK:
+                    // open file for writing
+                    file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_WRONLY);
+                    if (file_desc < 0)
+                    {
+                        // file does not exists or some other error
+                        debug1("File not exists:%s", params.p_file_name);
+                        // try to create new file
+                        file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_TRUNC | FS_CREAT | FS_WRONLY);
+                        if (file_desc < 0)
+                        {
+                            err1("Cannot create file:%s", params.p_file_name);
+                        }
+                    }
+                    if (file_desc >= 0)
+                    {
+                        fs_res = fs_write(params.partition, file_desc, params.p_value, params.len);
+                        fs_close(params.partition, file_desc);
+                        params.callback_func(fs_res);
+                    }
+                break;
+
+                case osErrorResource:
+                    err1("Queue empty!");
+                break;
+                
+                case osErrorParameter:
+                    err1("Parameter!");
+                break;
+                
+                default:
+                    err1("Unknown error!");
+            }
+        }
+
+        if (flags & FS_READ_FLAG)
+        {
+            debug1("Rd Thread");
+            // open file for reading
+            // wait parameter is set to 0 to avoid thread blocking because there should be data in the queue
+            res = osMessageQueueGet(m_rd_queue_id, (void*)&params, NULL, 0); 
+            switch (res)
+            {
+                case osOK:
+                    file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_RDONLY);
+                    debug1("fd:%d", file_desc);
+                    if (file_desc < 0)
+                    {
+                        // file does not exists or some other error
+                        debug1("File not exists:%s", params.p_file_name);
+                    }
+                    else
+                    {
+                        fs_res = fs_read(params.partition, file_desc, params.p_value, params.len);
+                        fs_close(params.partition, file_desc);
+                        params.callback_func(fs_res);
+                    }
+                break;
+
+                case osErrorResource:
+                    err1("Queue empty!");
+                break;
+                
+                case osErrorParameter:
+                    err1("Parameter!");
+                break;
+                
+                default:
+                    err1("Unknown error!");
+            }
+        }
+
+        if (flags & FS_SUSPENDFLAGS)
+        {
+            for (int f=0; f<FS_MAX_COUNT; f++)
+            {
+                if (flags & (1 << f))
+                {
+                    debug1("Suspend:0x%X", (1 << f));
+                    platform_mutex_acquire(fs[f].mutex);
+                    fs[f].driver->lock();
+                    if (NULL != fs[f].driver->suspend)
+                    {
+                        fs[f].driver->suspend();
+                    }
+                    fs[f].driver->unlock();
+                    platform_mutex_release(fs[f].mutex);
+                }
+            }
+        }
 	}
 }
-#endif//FS_MANAGE_FLASH_SLEEP
 
 static void fs_plan_suspend(int f)
 {
@@ -513,3 +622,84 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
 #if FS_MAX_COUNT > 3
 	#error FS_MAX_COUNT > 3
 #endif
+
+/*****************************************************************************
+ * Put one data read/write request to the read/write queue and sets 
+ * FS_READ_FLAG/FS_WRITE_FLAG on success
+ * @params command_type - Command FS_CMD_RD or FS_CMD_WRITE
+ * @params partition - Partition number 0..2
+ * @params p_file_name - Pointer to the file name
+ * @params p_value - Pointer to the data record
+ * @params len - Data record length in bytes
+ * @params wait - When wait = 0 function returns immediately, even when putting fails,
+ *                otherwise waits until put succeeds (and blocks calling thread)
+ *
+ * @return Returns number of bytes to write on success, 0 otherwise
+ ****************************************************************************/
+int32_t fs_rw_record (uint8_t command_type,
+                      int partition,
+                      const char * p_file_name,
+                      const void * p_value,
+                      int32_t len,
+                      fs_write_done_f callback_func,
+                      uint32_t wait)
+{
+    fs_rw_params_t params;
+    osMessageQueueId_t q_id;
+    uint32_t flags;
+
+    params.partition = partition;
+    params.p_file_name = (void*)p_file_name;
+    params.p_value = (void*)p_value;
+    params.len = len;
+    params.callback_func = callback_func;
+
+    switch (command_type)
+    {
+        case FS_WRITE_DATA:
+            debug1("FSQWr:%s l:%d", p_file_name, len);
+            q_id = m_wr_queue_id;
+            flags = FS_WRITE_FLAG;
+        break;
+
+        case FS_READ_DATA:
+            debug1("FSQRd:%s l:%d", p_file_name, len);
+            q_id = m_rd_queue_id;
+            flags = FS_READ_FLAG;
+        break;
+
+        default:
+            err1("!Cmd");
+            return 0;
+    }
+
+    if (wait != 0)
+    {
+        wait = osWaitForever;
+    }
+    osStatus_t res = osMessageQueuePut(q_id, &params, 0U, wait);
+    switch (res)
+    {
+        case osOK:
+            res = osThreadFlagsSet(m_thread_id, flags);
+            return len;
+        break;
+
+        case osErrorResource:
+            warn1("QFull!");
+        break;
+
+        case osErrorTimeout:
+            warn1("Timeout!");
+        break;
+
+        case osErrorParameter:
+            err1("Parameter!");
+        break;
+
+        default:
+            err1("Error:%d", res);
+
+    }
+    return 0;
+};

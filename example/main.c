@@ -21,7 +21,7 @@
 
 #include "basic_rtos_logger_setup.h"
 
-#include "rw_fs_record.h"
+// #include "rw_fs_record.h"
 
 #include "loglevels.h"
 #define __MODUUL__ "main"
@@ -83,6 +83,8 @@ void main_loop (void * arg)
     //debug1("performing mass-erase");
     //spi_flash_mass_erase();
 
+    osDelay(2000);
+
     debug1("initializing filesystem...");
     m_fs_driver.read = spi_flash_read;
     m_fs_driver.write = spi_flash_write;
@@ -98,7 +100,6 @@ void main_loop (void * arg)
     fs_start();
 
     test_fs_direct(fs_id);
-
     test_fs_record(fs_id);
 
     for (;;)
@@ -153,7 +154,7 @@ static void callback1 (int32_t res)
 {
     debug1("Callback1:%d", res);
 
-    if (sizeof(m_buffer_rec) != fs_read_record(m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), callback2))
+    if (sizeof(m_buffer_rec) != fs_rw_record(FS_READ_DATA, m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), callback2, 0))
     {
         err1("BAD record length on read");
     }
@@ -179,9 +180,9 @@ static void test_fs_record (int fs_id)
 
     info1("TEST: test_fs_record");
     
-    start_fs_rw_thread();
+    // start_fs_rw_thread();
 
-    if (sizeof(m_test_data_rec) != fs_write_record (m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), callback1))
+    if (sizeof(m_test_data_rec) != fs_rw_record(FS_WRITE_DATA, m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), callback1, 0))
     {
         err1("BAD record length on write");
     }

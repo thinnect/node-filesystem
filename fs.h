@@ -10,6 +10,9 @@
 #include <stdint.h>
 #include "spiffs.h"
 
+#define FS_WRITE_DATA 1
+#define FS_READ_DATA 2
+
 #define FS_APPEND (SPIFFS_APPEND)
 #define FS_TRUNC  (SPIFFS_TRUNC)
 #define FS_CREAT  (SPIFFS_CREAT)
@@ -45,6 +48,18 @@ struct fs_stat_struct
 };
 
 typedef struct fs_stat_struct fs_stat;
+
+typedef void (*fs_write_done_f) (int32_t len);
+
+typedef struct fs_rw_params
+{
+    int             partition;
+    char *          p_file_name;
+    void *          p_value;
+    int32_t         len;
+    uint16_t        caller_id;
+    fs_write_done_f callback_func;
+} fs_rw_params_t;
 
 /**
  * Initializes filesystem
@@ -137,5 +152,26 @@ int32_t fs_lseek(int f, fs_fd fd, int32_t offs, int whence);
  * @return 0 or negative on error
  */
 int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);
+
+/*****************************************************************************
+ * Put one data read/write request to the read/write queue and sets 
+ * FS_READ_FLAG/FS_WRITE_FLAG on success
+ * @params command_type - Command FS_CMD_RD or FS_CMD_WRITE
+ * @params partition - Partition number 0..2
+ * @params p_file_name - Pointer to the file name
+ * @params p_value - Pointer to the data record
+ * @params len - Data record length in bytes
+ * @params wait - When wait = 0 function returns immediately, even when putting fails,
+ *                otherwise waits until put succeeds (and blocks calling thread)
+ *
+ * @return Returns number of bytes to write on success, 0 otherwise
+ ****************************************************************************/
+int32_t fs_rw_record (uint8_t command_type,
+                      int partition,
+                      const char * p_file_name,
+                      const void * p_value,
+                      int32_t len,
+                      fs_write_done_f callback_func,
+                      uint32_t wait);
 
 #endif//_FS_H_
