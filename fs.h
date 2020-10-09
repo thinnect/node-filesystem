@@ -57,7 +57,6 @@ typedef struct fs_rw_params
     char *          p_file_name;
     void *          p_value;
     int32_t         len;
-    uint16_t        caller_id;
     fs_write_done_f callback_func;
 } fs_rw_params_t;
 

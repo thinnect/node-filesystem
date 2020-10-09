@@ -133,15 +133,29 @@ void fs_init(int f, int partition, fs_driver_t *driver)
 
 void fs_start()
 {
-	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 1024 };
+	const osThreadAttr_t thread_attr = { .name = "fs" };
 	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
+    if (NULL == m_thread_id)
+    {
+        err1("!Thread");
+        while(1);
+    }
 
     const osMessageQueueAttr_t wr_q_attr = { .name = "fs_wr_q" };
     m_wr_queue_id = osMessageQueueNew(MAX_Q_WR_COUNT, sizeof(fs_rw_params_t), &wr_q_attr);
+    if (NULL == m_wr_queue_id)
+    {
+        err1("!Queue");
+        while(1);
+    }
 
     const osMessageQueueAttr_t rd_q_attr = { .name = "fs_rd_q" };
-    m_wr_queue_id = osMessageQueueNew(MAX_Q_RD_COUNT, sizeof(fs_rw_params_t), &rd_q_attr);
-
+    m_rd_queue_id = osMessageQueueNew(MAX_Q_RD_COUNT, sizeof(fs_rw_params_t), &rd_q_attr);
+    if (NULL == m_rd_queue_id)
+    {
+        err1("!Queue");
+        while(1);
+    }
     // For now we just mount it in the current thread
 	fs_mount();
 }
@@ -322,6 +336,7 @@ static void fs_mount()
 		debug1("mounting fs #%d", f);
 		fs[f].driver->lock();
 
+
 		int ret = SPIFFS_mount(&fs[f].fs, &fs[f].cfg, fs[f].work_buf, fs[f].fds, sizeof(fs[f].fds), NULL, 0, NULL);
 		if(SPIFFS_OK != ret)
 		{
@@ -364,15 +379,22 @@ static void fs_thread(void * p)
     fs_rw_params_t params;
     fs_fd file_desc;
     int32_t fs_res;
+    uint32_t flags;
 
     debug1("Thread starts");
+    flags = osThreadFlagsClear(FS_THREAD_FLAGS_ALL);
+    debug1("ThrFlgs:0x%X", flags);
 
 	for (;;)
 	{
-		uint32_t flags = osThreadFlagsWait(FS_THREAD_FLAGS_ALL, osFlagsWaitAny, osWaitForever);
+		flags = osThreadFlagsWait(FS_THREAD_FLAGS_ALL, osFlagsWaitAny, osWaitForever);
 
         debug1("ThrFlgs:0x%X", flags);
-
+        if (flags & ~FS_THREAD_FLAGS_ALL)
+        {
+            err1("ThrdError:%X", flags);
+            continue;
+        }
         if (flags & FS_WRITE_FLAG)
         {
             debug1("Wr Thread");
@@ -382,6 +404,13 @@ static void fs_thread(void * p)
             {
                 case osOK:
                     // open file for writing
+                    debug2("p:%d f:%s pv:%p l:%d fnc:%p", 
+                           params.partition, \
+                           params.p_file_name, \
+                           params.p_value, \
+                           params.len, \
+                           params.callback_func);
+
                     file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_WRONLY);
                     if (file_desc < 0)
                     {
@@ -653,6 +682,13 @@ int32_t fs_rw_record (uint8_t command_type,
     params.p_value = (void*)p_value;
     params.len = len;
     params.callback_func = callback_func;
+
+    debug2("p:%d f:%s pv:%p l:%d fnc:%p", 
+           params.partition, \
+           params.p_file_name, \
+           params.p_value, \
+           params.len, \
+           params.callback_func);
 
     switch (command_type)
     {

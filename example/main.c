@@ -20,8 +20,7 @@
 #include "fs.h"
 
 #include "basic_rtos_logger_setup.h"
-
-// #include "rw_fs_record.h"
+#include "basic_rtos_filesystem_setup.h"
 
 #include "loglevels.h"
 #define __MODUUL__ "main"
@@ -53,37 +52,7 @@ void main_loop (void * arg)
 {
     // Switch to a thread-safe logger
     basic_rtos_logger_setup();
-
-    RETARGET_SpiInit();
-    spi_flash_init();
-
-    uint8_t jedec[4] = {0};
-    RETARGET_SpiTransferHalf(0, "\x9F", 1, jedec, 4);
-    info1("jedec %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
-
-    // Put the flash to sleep, it should resume automatically
-    spi_flash_suspend();
-
-    // Obtaining the JEDEC id should now return all zeros
-    RETARGET_SpiTransferHalf(0, "\x9F", 1, jedec, 4);
-
-    if (0 == memcmp(jedec, (char[4]){0}, 4)) // tsb0
-    {
-        debug1("sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
-    }
-    else if (0 == memcmp(jedec, (char[4]){0xff, 0xff, 0xff, 0xff}, 4)) // tsb2
-    {
-        debug1("sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
-    }
-    else
-    {
-        err1("not sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
-    }
-
-    //debug1("performing mass-erase");
-    //spi_flash_mass_erase();
-
-    osDelay(2000);
+    basic_rtos_filesystem_setup();
 
     debug1("initializing filesystem...");
     m_fs_driver.read = spi_flash_read;
