@@ -37,14 +37,14 @@ INCBIN(Header, "header.bin");
 
 static fs_driver_t m_fs_driver;
 static int m_fs_id;
-const char m_test_data_rec[] = "HelloWorld!";
+const char m_test_data_rec[] = "Hello World!";
 char m_buffer_rec[sizeof(m_test_data_rec)];
 
 static void test_fs_direct (int fs_id);
 static void test_fs_record (int fs_id);
 
-static void callback1 (int32_t res);
-static void callback2 (int32_t res);
+static void cb_read_done (int32_t res);
+static void cb_write_done (int32_t res);
 
 extern void start_fs_rw_thread ();
 
@@ -119,20 +119,20 @@ static void test_fs_direct (int fs_id)
     }
 }
 
-static void callback1 (int32_t res)
+static void cb_write_done (int32_t res)
 {
-    debug1("Callback1:%d", res);
+    debug1("cb_write_done:%d", res);
 
-    if (sizeof(m_buffer_rec) != fs_rw_record(FS_READ_DATA, m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), callback2, 0))
+    if (sizeof(m_buffer_rec) != fs_read_record(m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), cb_read_done, 0))
     {
         err1("BAD record length on read");
     }
 }
 
-static void callback2 (int32_t res)
+static void cb_read_done (int32_t res)
 {
-    debug1("Callback2:%d", res);
-
+    debug1("cb_read_done:%d", res);
+    info1("Read: %s", m_test_data_rec);
     if (0 == memcmp(m_test_data_rec, m_buffer_rec, sizeof(m_test_data_rec)))
     {
         info1("GOOD DATA: %s", m_buffer_rec);
@@ -148,10 +148,8 @@ static void test_fs_record (int fs_id)
     m_fs_id = fs_id;
 
     info1("TEST: test_fs_record");
-    
-    // start_fs_rw_thread();
-
-    if (sizeof(m_test_data_rec) != fs_rw_record(FS_WRITE_DATA, m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), callback1, 0))
+    info1("Write: %s", m_test_data_rec);
+    if (sizeof(m_test_data_rec) != fs_write_record(m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), cb_write_done, 0))
     {
         err1("BAD record length on write");
     }

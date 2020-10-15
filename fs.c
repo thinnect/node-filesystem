@@ -665,13 +665,13 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
-int32_t fs_rw_record (uint8_t command_type,
-                      int partition,
-                      const char * p_file_name,
-                      const void * p_value,
-                      int32_t len,
-                      fs_write_done_f callback_func,
-                      uint32_t wait)
+static int32_t fs_rw_record (uint8_t command_type,
+                      		 int partition,
+                      		 const char * p_file_name,
+                      		 const void * p_value,
+                      		 int32_t len,
+                      		 fs_rw_done_f callback_func,
+                      		 uint32_t wait)
 {
     fs_rw_params_t params;
     osMessageQueueId_t q_id;
@@ -738,4 +738,46 @@ int32_t fs_rw_record (uint8_t command_type,
 
     }
     return 0;
-};
+}
+
+/*****************************************************************************
+ * Put one data read request to the read queue
+ * @params partition - Partition number 0..2
+ * @params p_file_name - Pointer to the file name
+ * @params p_value - Pointer to the data record
+ * @params len - Data record length in bytes
+ * @params wait - When wait = 0 function returns immediately, even when putting fails,
+ *                otherwise waits until put succeeds (and blocks calling thread)
+ *
+ * @return Returns number of bytes to write on success, 0 otherwise
+ ****************************************************************************/
+int32_t fs_read_record (int partition,
+                      	const char * p_file_name,
+                      	void * p_value,
+                      	int32_t len,
+                      	fs_rw_done_f callback_func,
+                      	uint32_t wait)
+{
+	return fs_rw_record(FS_READ_DATA, partition, p_file_name, p_value, len, callback_func, wait);
+}
+
+/*****************************************************************************
+ * Put one data write request to the write queue
+ * @params partition - Partition number 0..2
+ * @params p_file_name - Pointer to the file name
+ * @params p_value - Pointer to the data record
+ * @params len - Data record length in bytes
+ * @params wait - When wait = 0 function returns immediately, even when putting fails,
+ *                otherwise waits until put succeeds (and blocks calling thread)
+ *
+ * @return Returns number of bytes to write on success, 0 otherwise
+ ****************************************************************************/
+int32_t fs_write_record (int partition,
+                      	const char * p_file_name,
+                      	const void * p_value,
+                      	int32_t len,
+                      	fs_rw_done_f callback_func,
+                      	uint32_t wait)
+{
+	return fs_rw_record(FS_WRITE_DATA, partition, p_file_name, p_value, len, callback_func, wait);
+}
