@@ -405,19 +405,19 @@ static void fs_thread(void * p)
                 case osOK:
                     // open file for writing
                     debug2("p:%d f:%s pv:%p l:%d fnc:%p", 
-                           params.partition, \
+                           params.file_sys_nr, \
                            params.p_file_name, \
                            params.p_value, \
                            params.len, \
                            params.callback_func);
 
-                    file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_WRONLY);
+                    file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_WRONLY);
                     if (file_desc < 0)
                     {
                         // file does not exists or some other error
                         debug1("File not exists:%s", params.p_file_name);
                         // try to create new file
-                        file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_TRUNC | FS_CREAT | FS_WRONLY);
+                        file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_TRUNC | FS_CREAT | FS_WRONLY);
                         if (file_desc < 0)
                         {
                             err1("Cannot create file:%s", params.p_file_name);
@@ -425,8 +425,8 @@ static void fs_thread(void * p)
                     }
                     if (file_desc >= 0)
                     {
-                        fs_res = fs_write(params.partition, file_desc, params.p_value, params.len);
-                        fs_close(params.partition, file_desc);
+                        fs_res = fs_write(params.file_sys_nr, file_desc, params.p_value, params.len);
+                        fs_close(params.file_sys_nr, file_desc);
                         params.callback_func(fs_res);
                     }
                 break;
@@ -453,7 +453,7 @@ static void fs_thread(void * p)
             switch (res)
             {
                 case osOK:
-                    file_desc = fs_open(params.partition, (void*)params.p_file_name, FS_RDONLY);
+                    file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_RDONLY);
                     debug1("fd:%d", file_desc);
                     if (file_desc < 0)
                     {
@@ -462,8 +462,8 @@ static void fs_thread(void * p)
                     }
                     else
                     {
-                        fs_res = fs_read(params.partition, file_desc, params.p_value, params.len);
-                        fs_close(params.partition, file_desc);
+                        fs_res = fs_read(params.file_sys_nr, file_desc, params.p_value, params.len);
+                        fs_close(params.file_sys_nr, file_desc);
                         params.callback_func(fs_res);
                     }
                 break;
@@ -656,7 +656,7 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
  * Put one data read/write request to the read/write queue and sets 
  * FS_READ_FLAG/FS_WRITE_FLAG on success
  * @params command_type - Command FS_CMD_RD or FS_CMD_WRITE
- * @params partition - Partition number 0..2
+ * @params file_sys_nr - File system number 0..2
  * @params p_file_name - Pointer to the file name
  * @params p_value - Pointer to the data record
  * @params len - Data record length in bytes
@@ -666,7 +666,7 @@ static int32_t fs_erase2(uint32_t addr, uint32_t size)
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
 static int32_t fs_rw_record (uint8_t command_type,
-                      		 int partition,
+                      		 int file_sys_nr,
                       		 const char * p_file_name,
                       		 const void * p_value,
                       		 int32_t len,
@@ -677,14 +677,14 @@ static int32_t fs_rw_record (uint8_t command_type,
     osMessageQueueId_t q_id;
     uint32_t flags;
 
-    params.partition = partition;
+    params.file_sys_nr = file_sys_nr;
     params.p_file_name = (void*)p_file_name;
     params.p_value = (void*)p_value;
     params.len = len;
     params.callback_func = callback_func;
 
     debug2("p:%d f:%s pv:%p l:%d fnc:%p", 
-           params.partition, \
+           params.file_sys_nr, \
            params.p_file_name, \
            params.p_value, \
            params.len, \
@@ -742,7 +742,7 @@ static int32_t fs_rw_record (uint8_t command_type,
 
 /*****************************************************************************
  * Put one data read request to the read queue
- * @params partition - Partition number 0..2
+ * @params file_sys_nr - file_sys_nr number 0..2
  * @params p_file_name - Pointer to the file name
  * @params p_value - Pointer to the data record
  * @params len - Data record length in bytes
@@ -751,19 +751,34 @@ static int32_t fs_rw_record (uint8_t command_type,
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
-int32_t fs_read_record (int partition,
+int32_t fs_read_record (int file_sys_nr,
                       	const char * p_file_name,
                       	void * p_value,
                       	int32_t len,
                       	fs_rw_done_f callback_func,
                       	uint32_t wait)
 {
-	return fs_rw_record(FS_READ_DATA, partition, p_file_name, p_value, len, callback_func, wait);
+	if ((file_sys_nr > 2) || (file_sys_nr < 0))
+	{
+		err1("File system number:%d", file_sys_nr);
+		return 0;
+	}
+	if (NULL == p_value)
+	{
+		err1("p_value = NULL");
+		return 0;
+	}
+	if (NULL == callback_func)
+	{
+		err1("Callback = NULL");
+		return 0;
+	}
+	return fs_rw_record(FS_READ_DATA, file_sys_nr, p_file_name, p_value, len, callback_func, wait);
 }
 
 /*****************************************************************************
  * Put one data write request to the write queue
- * @params partition - Partition number 0..2
+ * @params file_sys_nr - file_sys_nr number 0..2
  * @params p_file_name - Pointer to the file name
  * @params p_value - Pointer to the data record
  * @params len - Data record length in bytes
@@ -772,12 +787,22 @@ int32_t fs_read_record (int partition,
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
-int32_t fs_write_record (int partition,
+int32_t fs_write_record (int file_sys_nr,
                       	const char * p_file_name,
                       	const void * p_value,
                       	int32_t len,
                       	fs_rw_done_f callback_func,
                       	uint32_t wait)
 {
-	return fs_rw_record(FS_WRITE_DATA, partition, p_file_name, p_value, len, callback_func, wait);
+	if ((file_sys_nr > 2) || (file_sys_nr < 0))
+	{
+		err1("File system number:%d", file_sys_nr);
+		return 0;
+	}
+	if (NULL == callback_func)
+	{
+		err1("Callback = NULL");
+		return 0;
+	}
+	return fs_rw_record(FS_WRITE_DATA, file_sys_nr, p_file_name, p_value, len, callback_func, wait);
 }

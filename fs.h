@@ -53,7 +53,7 @@ typedef void (*fs_rw_done_f) (int32_t len);
 
 typedef struct fs_rw_params
 {
-    int             partition;
+    int             file_sys_nr;
     char *          p_file_name;
     void *          p_value;
     int32_t         len;
@@ -154,7 +154,7 @@ int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);
 
 /*****************************************************************************
  * Put one data read request to the read queue
- * @params partition - Partition number 0..2
+ * @params file_sys_nr - File system number 0..2
  * @params p_file_name - Pointer to the file name
  * @params p_value - Pointer to the data record
  * @params len - Data record length in bytes
@@ -163,7 +163,7 @@ int32_t fs_fstat(int f, fs_fd fd, fs_stat *s);
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
-int32_t fs_read_record (int partition,
+int32_t fs_read_record (int file_sys_nr,
                       	const char * p_file_name,
                       	void * p_value,
                       	int32_t len,
@@ -172,7 +172,7 @@ int32_t fs_read_record (int partition,
 
 /*****************************************************************************
  * Put one data write request to the write queue
- * @params partition - Partition number 0..2
+ * @params file_sys_nr - File system number 0..2
  * @params p_file_name - Pointer to the file name
  * @params p_value - Pointer to the data record
  * @params len - Data record length in bytes
@@ -181,7 +181,7 @@ int32_t fs_read_record (int partition,
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
-int32_t fs_write_record (int partition,
+int32_t fs_write_record (int file_sys_nr,
                       	const char * p_file_name,
                       	const void * p_value,
                       	int32_t len,
