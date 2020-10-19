@@ -20,7 +20,6 @@
 #include "fs.h"
 
 #include "basic_rtos_logger_setup.h"
-#include "basic_rtos_filesystem_setup.h"
 
 #include "loglevels.h"
 #define __MODUUL__ "main"
@@ -41,10 +40,10 @@ const char m_test_data_rec[] = "Hello World!";
 char m_buffer_rec[sizeof(m_test_data_rec)];
 
 static void test_fs_direct (int fs_id);
-static void test_fs_record (int fs_id);
+static void test_fs_record (int fs_id, void * p_user);
 
-static void cb_read_done (int32_t res);
-static void cb_write_done (int32_t res);
+static void cb_read_done (int32_t res, void * p_user);
+static void cb_write_done (int32_t res, void * p_user);
 
 extern void start_fs_rw_thread ();
 
@@ -52,7 +51,35 @@ void main_loop (void * arg)
 {
     // Switch to a thread-safe logger
     basic_rtos_logger_setup();
-    basic_rtos_filesystem_setup();
+
+    RETARGET_SpiInit();
+    spi_flash_init();
+
+    uint8_t jedec[4] = {0};
+    RETARGET_SpiTransferHalf(0, "\x9F", 1, jedec, 4);
+    info1("jedec %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
+
+    // Put the flash to sleep, it should resume automatically
+    spi_flash_suspend();
+
+    // Obtaining the JEDEC id should now return all zeros
+    RETARGET_SpiTransferHalf(0, "\x9F", 1, jedec, 4);
+
+    if (0 == memcmp(jedec, (char[4]){0}, 4)) // tsb0
+    {
+        debug1("sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
+    }
+    else if (0 == memcmp(jedec, (char[4]){0xff, 0xff, 0xff, 0xff}, 4)) // tsb2
+    {
+        debug1("sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
+    }
+    else
+    {
+        err1("not sleeping %02x%02x%02x%02x", jedec[0], jedec[1], jedec[2], jedec[3]);
+    }
+
+    debug1("performing mass-erase");
+    spi_flash_mass_erase();
 
     debug1("initializing filesystem...");
     m_fs_driver.read = spi_flash_read;
@@ -69,11 +96,18 @@ void main_loop (void * arg)
     fs_start();
 
     test_fs_direct(fs_id);
-    test_fs_record(fs_id);
+
+    bool record_callbacks_called = false;
+    test_fs_record(fs_id, &record_callbacks_called);
 
     for (;;)
     {
         osDelay(1000);
+        if (record_callbacks_called)
+        {
+            info1("DONE!");
+            record_callbacks_called = false;
+        }
     }
 }
 
@@ -119,19 +153,21 @@ static void test_fs_direct (int fs_id)
     }
 }
 
-static void cb_write_done (int32_t res)
+static void cb_write_done (int32_t res, void * p_user)
 {
     debug1("cb_write_done:%d", res);
 
-    if (sizeof(m_buffer_rec) != fs_read_record(m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), cb_read_done, 0))
+    if (sizeof(m_buffer_rec) != fs_read_record(m_fs_id, "helloworld.txt", m_buffer_rec, sizeof(m_buffer_rec), 0, cb_read_done, p_user))
     {
         err1("BAD record length on read");
     }
 }
 
-static void cb_read_done (int32_t res)
+static void cb_read_done (int32_t res, void * p_user)
 {
     debug1("cb_read_done:%d", res);
+    *((bool*)p_user) = true;
+
     info1("Read: %s", m_test_data_rec);
     if (0 == memcmp(m_test_data_rec, m_buffer_rec, sizeof(m_test_data_rec)))
     {
@@ -143,13 +179,13 @@ static void cb_read_done (int32_t res)
     }
 }
 
-static void test_fs_record (int fs_id)
+static void test_fs_record (int fs_id, void * p_user)
 {
     m_fs_id = fs_id;
 
     info1("TEST: test_fs_record");
     info1("Write: %s", m_test_data_rec);
-    if (sizeof(m_test_data_rec) != fs_write_record(m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), cb_write_done, 0))
+    if (sizeof(m_test_data_rec) != fs_write_record(m_fs_id, "helloworld.txt", m_test_data_rec, sizeof(m_test_data_rec), 0, cb_write_done, p_user))
     {
         err1("BAD record length on write");
     }
@@ -187,6 +223,6 @@ int main ()
         err1("!osKernelReady");
     }
 
-    while(true);
+    while (true);
 }
 
