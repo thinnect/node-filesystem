@@ -130,7 +130,6 @@ INCLUDES += -I$(ZOO)/thinnect.lll/logging
 
 INCLUDES += -I$(NODE_PLATFORM_DIR)/widgets
 SOURCES += $(NODE_PLATFORM_DIR)/widgets/basic_rtos_logger_setup.c
-SOURCES += $(NODE_PLATFORM_DIR)/widgets/basic_rtos_filesystem_setup.c
 SOURCES += $(NODE_PLATFORM_DIR)/silabs/watchdog.c
 SOURCES += $(SILABS_SDKDIR)/platform/emlib/src/em_wdog.c
 
