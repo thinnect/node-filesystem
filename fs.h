@@ -155,7 +155,7 @@ int32_t fs_fstat(int file_sys_nr, fs_fd fd, fs_stat *s);
  * @param wait - When wait = 0 function returns immediately, even when putting fails,
  *                otherwise waits until put succeeds (and blocks calling thread)
  * @param f_callback - Callback when operation has been completed.
- * @parak p_user - User pointer passed to callback.
+ * @param p_user - User pointer passed to callback.
  *
  * @return Returns number of bytes to read on success, 0 otherwise
  ****************************************************************************/
@@ -176,7 +176,7 @@ int32_t fs_read_record (int file_sys_nr,
  * @param wait - When wait = 0 function returns immediately, even when putting fails,
  *                otherwise waits until put succeeds (and blocks calling thread)
  * @param f_callback - Callback when operation has been completed.
- * @parak p_user - User pointer passed to callback.
+ * @param p_user - User pointer passed to callback.
  *
  * @return Returns number of bytes to write on success, 0 otherwise
  ****************************************************************************/
