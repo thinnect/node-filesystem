@@ -36,8 +36,8 @@
 #define FS_SPIFFS_LOG_PAGE_SZ  (128UL)
 #define FS_SPIFFS_LOG_BLOCK_SZ (32UL * 1024UL)
 
-#define MAX_Q_WR_COUNT 3
-#define MAX_Q_RD_COUNT 3
+#define MAX_Q_WR_COUNT 10
+#define MAX_Q_RD_COUNT 10
 
 #define FS_WRITE_DATA 1
 #define FS_READ_DATA 2
@@ -434,6 +434,7 @@ static void fs_thread (void * p)
 						if (file_desc < 0)
 						{
 							err1("Cannot create file:%s", params.p_file_name);
+							params.f_callback(0, params.p_user);
 						}
 					}
 					if (file_desc >= 0)
@@ -446,14 +447,22 @@ static void fs_thread (void * p)
 
 				case osErrorResource:
 					err1("Queue empty!");
+					params.f_callback(0, params.p_user);
 				break;
 
 				case osErrorParameter:
 					err1("Parameter!");
+					params.f_callback(0, params.p_user);
 				break;
 
 				default:
 					err1("Unknown error!");
+					params.f_callback(0, params.p_user);
+			}
+			if (osMessageQueueGetCount(m_wr_queue_id) > 0)
+			{
+				debug1("Wr pending");
+				osThreadFlagsSet(m_thread_id, FS_WRITE_FLAG);
 			}
 		}
 
@@ -472,6 +481,7 @@ static void fs_thread (void * p)
 					{
 						// file does not exists or some other error
 						debug1("File not exists:%s", params.p_file_name);
+						params.f_callback(0, params.p_user);
 					}
 					else
 					{
@@ -483,14 +493,22 @@ static void fs_thread (void * p)
 
 				case osErrorResource:
 					err1("Queue empty!");
+					params.f_callback(0, params.p_user);
 				break;
 
 				case osErrorParameter:
 					err1("Parameter!");
+					params.f_callback(0, params.p_user);
 				break;
 
 				default:
 					err1("Unknown error!");
+					params.f_callback(0, params.p_user);
+			}
+			if (osMessageQueueGetCount(m_rd_queue_id) > 0)
+			{
+				debug1("Rd pending");
+				osThreadFlagsSet(m_thread_id, FS_READ_FLAG);
 			}
 		}
 
