@@ -137,9 +137,9 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 	}
 
 #ifdef FS_MANAGE_FLASH_SLEEP
-	if(f < FS_MAX_COUNT)
+	if(file_sys_nr < FS_MAX_COUNT)
 	{
-		m_sleep_timers[file_sys_nr] = osTimerNew(&fs_suspend_timer_cb, osTimerOnce, (void*)(intptr_t)f, NULL);
+		m_sleep_timers[file_sys_nr] = osTimerNew(&fs_suspend_timer_cb, osTimerOnce, (void*)(intptr_t)file_sys_nr, NULL);
 	}
 #endif
 }
