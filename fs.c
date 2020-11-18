@@ -146,7 +146,7 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 
 void fs_start ()
 {
-	const osThreadAttr_t thread_attr = { .name = "fs" };
+	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 2048 };
 	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
 	if (NULL == m_thread_id)
 	{
