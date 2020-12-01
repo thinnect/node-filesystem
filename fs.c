@@ -20,16 +20,17 @@
 #include "fs.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include "platform_mutex.h"
 #include "spi_flash.h"
 #include "spiffs.h"
-#include "loglevels.h"
-
 #include "cmsis_os2.h"
 
+#include "loglevels.h"
 #define __MODUUL__ "fs"
 #define __LOG_LEVEL__ (LOG_LEVEL_fs & BASE_LOG_LEVEL)
 #include "log.h"
+#include "sys_panic.h"
 
 #define FS_MAX_COUNT 3
 
@@ -135,6 +136,53 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 		fs[file_sys_nr].cfg.hal_erase_f = fs_erase2;
 #endif
 	}
+
+	#ifndef FS_NO_CONFIG_VALIDATION
+		uint32_t spiffs_file_system_size = fs[file_sys_nr].cfg.phys_size;
+		uint32_t log_block_size = fs[file_sys_nr].cfg.log_block_size;
+		uint32_t log_page_size = fs[file_sys_nr].cfg.log_page_size;
+		// Block index type. Make sure the size of this type can hold
+		// the highest number of all blocks - i.e. spiffs_file_system_size / log_block_size
+		// DEFAULT: typedef u16_t spiffs_block_ix;
+		uint32_t highest_number_of_blocks = spiffs_file_system_size / log_block_size;
+		debug1("spiffs_block_ix %u", highest_number_of_blocks);
+		if (highest_number_of_blocks > ((1 << 8*sizeof(spiffs_block_ix))-1))
+		{
+			sys_panic("spiffs_block_ix");
+		}
+
+		// Page index type. Make sure the size of this type can hold
+		// the highest page number of all pages - i.e. spiffs_file_system_size / log_page_size
+		// DEFAULT: typedef u16_t spiffs_page_ix;
+		uint32_t highest_page_number = spiffs_file_system_size / log_page_size;
+		debug1("spiffs_page_ix %"PRIu32, highest_page_number);
+		if (highest_page_number > ((1 << 8*sizeof(spiffs_page_ix))-1))
+		{
+			sys_panic("spiffs_page_ix");
+		}
+
+		// Object id type - most significant bit is reserved for index flag. Make sure the
+		// size of this type can hold the highest object id on a full system,
+		// i.e. 2 + (spiffs_file_system_size / (2*log_page_size))*2
+		// DEFAULT: typedef u16_t spiffs_obj_id;
+		uint32_t highest_object_id = (2 + (spiffs_file_system_size / (2*log_page_size))*2);
+		debug1("spiffs_obj_id %"PRIu32, highest_object_id);
+		if (highest_object_id > ((1 << 8*sizeof(spiffs_obj_id))-1))
+		{
+			sys_panic("spiffs_obj_id");
+		}
+
+		// Object span index type. Make sure the size of this type can
+		// hold the largest possible span index on the system -
+		// i.e. (spiffs_file_system_size / log_page_size) - 1
+		// DEFAULT: typedef u16_t spiffs_span_ix;
+		uint32_t largest_span_index = spiffs_file_system_size / log_page_size - 1;
+		debug1("spiffs_span_ix %"PRIu32, largest_span_index);
+		if (largest_span_index > ((1 << 8*sizeof(spiffs_span_ix))-1))
+		{
+			sys_panic("spiffs_span_ix");
+		}
+	#endif//FS_NO_CONFIG_VALIDATION
 
 #ifdef FS_MANAGE_FLASH_SLEEP
 	if(file_sys_nr < FS_MAX_COUNT)
