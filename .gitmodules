@@ -6,7 +6,7 @@
 [submodule "zoo/FreeRTOS-Kernel"]
 	path = zoo/FreeRTOS-Kernel
 	url = https://github.com/FreeRTOS/FreeRTOS-Kernel
-	branch = master
+	branch = main
 
 [submodule "zoo/thinnect.node-buildsystem"]
 	path = zoo/thinnect.node-buildsystem
@@ -15,7 +15,7 @@
 [submodule "zoo/thinnect.node-platform"]
 	path = zoo/thinnect.node-platform
 	url = https://github.com/thinnect/node-platform.git
-	branch = newmaster
+	branch = master
 [submodule "zoo/thinnect.lll"]
 	path = zoo/thinnect.lll
 	url = https://github.com/thinnect/lll.git

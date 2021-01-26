@@ -91,7 +91,7 @@ void main_loop (void * arg)
     m_fs_driver.lock = spi_flash_lock;
     m_fs_driver.unlock = spi_flash_unlock;
 
-    int fs_id = 0; // Will use first filesystem (possible to use up to 3 usually)
+    int fs_id = 0; // Will use first filesystem (supported number set by FS_MAX_COUNT)
     fs_init(fs_id, DATAFLASH_SPIFFS_PARTITION, &m_fs_driver);
     fs_start();
 

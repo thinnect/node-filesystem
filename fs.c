@@ -1,6 +1,11 @@
 /**
  * Filesystem wrapper for SPIFFS.
  *
+ * Multiple filesystem functionality:
+ * The fs wrapper can be used to access multiple filesystems, like one in an
+ * external dataflash and another small one for backup settings in a part of
+ * the internal mcu flash. Set the number of filesystems with FS_MAX_COUNT.
+ *
  * Suspend functionality:
  * If FS_MANAGE_FLASH_SLEEP is defined, after accessing a filesystem, the fs
  * will start a timer and after it expires, will suspend the underlying
@@ -32,7 +37,13 @@
 #include "log.h"
 #include "sys_panic.h"
 
-#define FS_MAX_COUNT 3
+#ifndef FS_MAX_COUNT
+#define FS_MAX_COUNT 1
+#endif//FS_MAX_COUNT
+
+#ifndef FS_MAX_DESCRIPTORS
+#define FS_MAX_DESCRIPTORS 6
+#endif//FS_MAX_DESCRIPTORS
 
 #define FS_SPIFFS_LOG_PAGE_SZ  (128UL)
 #define FS_SPIFFS_LOG_BLOCK_SZ (32UL * 1024UL)
@@ -53,7 +64,7 @@ struct fs_struct
 	spiffs_config cfg;
 	spiffs fs;
 	uint8_t work_buf[FS_SPIFFS_LOG_PAGE_SZ * 2];
-	uint8_t fds[32 * 4];
+	uint8_t fds[32 * FS_MAX_DESCRIPTORS];
 };
 
 static struct fs_struct fs[FS_MAX_COUNT];
@@ -94,12 +105,16 @@ static void fs_mount();
 static int32_t fs_read0(uint32_t addr, uint32_t size, uint8_t * dst);
 static int32_t fs_write0(uint32_t addr, uint32_t size, uint8_t * src);
 static int32_t fs_erase0(uint32_t addr, uint32_t size);
+#if FS_MAX_COUNT > 1
 static int32_t fs_read1(uint32_t addr, uint32_t size, uint8_t * dst);
 static int32_t fs_write1(uint32_t addr, uint32_t size, uint8_t * src);
 static int32_t fs_erase1(uint32_t addr, uint32_t size);
+#endif// FS_MAX_COUNT > 1
+#if FS_MAX_COUNT > 2
 static int32_t fs_read2(uint32_t addr, uint32_t size, uint8_t * dst);
 static int32_t fs_write2(uint32_t addr, uint32_t size, uint8_t * src);
 static int32_t fs_erase2(uint32_t addr, uint32_t size);
+#endif// FS_MAX_COUNT > 2
 
 void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 {
