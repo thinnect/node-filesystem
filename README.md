@@ -40,6 +40,16 @@ This project contains code for the Filesystem abstraction layer.
 ## Read one data record from the file
 `int32_t fs_read_record (int file_sys_nr, const char * p_file_name, void * p_value, int32_t len, fs_rw_done_f callback_func, uint32_t wait)`
 
+# Configuration
+
+**FS_MAX_COUNT** - Number of supported filesystems, defaults to 1, but more can
+be supported, for example to have a backup filesystem with critical system settings.
+
+**FS_MAX_DESCRIPTORS** - Number of files that can be open at the same time,
+defaults to 6. Should be slightly larger than the actual number of files you
+intend to keep open or spontaneously access from multiple threads, as the
+descriptors may not become immediately available for re-use.
+
 # Dependencies / submodules
 
 Thinnect LowLevelLogging (submodule, MIT license)
