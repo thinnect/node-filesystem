@@ -65,6 +65,17 @@ void fs_init(int file_sys_nr, int partition, fs_driver_t *driver);
 void fs_start();
 
 /**
+ * Return filesystem total and used space.
+ * 
+ * @param file_sys_nr - File system number 0..2
+ * @param p_total - Memory to stored total available space value (may be NULL if not needed).
+ * @param p_used - Memory to stored used space value (may be NULL if not needed).
+ * 
+ * @return 0 for success, SPIFFS error otherwise.
+ */
+int32_t fs_info (int file_sys_nr, uint32_t * p_total, uint32_t * p_used);
+
+/**
  * Opens the file specified by path
  *
  * @param file_sys_nr - File system number 0..2

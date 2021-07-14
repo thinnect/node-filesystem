@@ -236,6 +236,30 @@ void fs_start ()
 	fs_mount();
 }
 
+int32_t fs_info (int file_sys_nr, uint32_t * p_total, uint32_t * p_used)
+{
+	fs_abort_suspend(file_sys_nr);
+	platform_mutex_acquire(fs[file_sys_nr].mutex);
+
+	uint32_t total, used;
+	int32_t ret = SPIFFS_info(&fs[file_sys_nr].fs, &total, &used);
+
+	if (NULL != p_total)
+	{
+		*p_total = total;
+	}
+	if (NULL != p_used)
+	{
+		*p_used = used;
+	}
+
+	fs_plan_suspend(file_sys_nr);
+	platform_mutex_release(fs[file_sys_nr].mutex);
+
+	return ret;
+}
+
+
 fs_fd fs_open (int file_sys_nr, char *path, uint32_t flags)
 {
 	spiffs_file sfd;
@@ -428,8 +452,15 @@ static void fs_mount ()
 		{
 			uint32_t total, used;
 			ret = SPIFFS_info(&fs[f].fs, &total, &used);
-			debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
-			fs[f].ready = 1;
+			if (SPIFFS_OK == ret)
+			{
+				debug1("fs #%d ready, total: %u, used: %u", f, (unsigned int)total, (unsigned int)used);
+				fs[f].ready = 1;
+			}
+			else
+			{
+				err1("fs #%d info %d", f, (int)ret);
+			}
 		}
 
 		fs[f].driver->unlock();
