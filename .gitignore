@@ -1,2 +1,5 @@
 example/build
+example/Makefile.private
+example/m.sh
+zoo/silabs.sdk/
 
