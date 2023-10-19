@@ -29,16 +29,21 @@ VERBOSE                 ?= 0
 # Disable info messages
 #SILENT                  ?= 1
 
+# Use new radio module
+NEW_THINMODULE = 1
+CFLAGS += -DNEW_THINMODULE
+
 # Destination for build results
 BUILD_BASE_DIR          ?= build
 # Mark the default target
 DEFAULT_BUILD_TARGET    ?= $(PROJECT_NAME)
 
 ROOT_DIR                ?= $(abspath .)
-ZOO                     ?= $(ROOT_DIR)/../zoo
+ZOO                     ?= $(ROOT_DIR)/../..
 
 # Silabs SDK location and version
-SILABS_SDKDIR           ?= $(HOME)/SimplicityStudio_v4/developer/sdks/gecko_sdk_suite/v2.7
+SILABS_SDKDIR           ?= $(ZOO)/silabs.sdk/v2.7
+# SILABS_SDKDIR           ?= $(HOME)/SimplicityStudio_v4/developer/sdks/gecko_sdk_suite/v2.7
 
 # Configure how image is programmed to target device
 APP_START                = 0
@@ -55,7 +60,7 @@ HEADEREDIT              ?= headeredit
 
 BUILD_DIR                = $(BUILD_BASE_DIR)/$(BUILD_TARGET)
 BUILDSYSTEM_DIR         := $(ZOO)/thinnect.node-buildsystem/make
-PLATFORMS_DIRS          := $(ZOO)/thinnect.node-buildsystem/make $(ZOO)/thinnect.dev-platforms/make
+PLATFORMS_DIRS          := $(ZOO)/thinnect.node-buildsystem/make $(ZOO)/thinnect.dev-platforms/make $(ZOO)/thinnect.pro-platforms/make
 PHONY_GOALS             := all $(PROJECT_NAME) combo clean
 TARGETLESS_GOALS        += clean
 UUID_APPLICATION        := e4e3db80-c541-4d0f-900a-58c084c88349
@@ -117,6 +122,13 @@ SOURCES += \
     $(NODE_PLATFORM_DIR)/common/platform_mutex.c \
     $(NODE_PLATFORM_DIR)/common/spi_flash.c \
     $(NODE_PLATFORM_DIR)/silabs/logger_fwrite_basic.c
+
+INCLUDES += \
+    -I$(ZOO)/silabs.sdk/v2.7/platform/Device/SiliconLabs/EFR32BG21/Include \
+    -I$(ZOO)/silabs.sdk/v2.7/platform/CMSIS/Include \
+    -I$(ZOO)/silabs.sdk/v2.7/platform/emlib/inc/ \
+    -I$(ZOO)/silabs.sdk/v2.7/hardware/kit/common/drivers \
+    -I$(ZOO)/silabs.sdk/v2.7/platform/emdrv/sleep/inc
 
 # logging
 #CFLAGS += -DLOGGER_TIMESTAMP
