@@ -152,6 +152,21 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 #endif
 	}
 
+	// Take physical size from JEDEC
+	if (driver->static_size != 0)
+	{
+		// fs[file_sys_nr].cfg.phys_size = FS_SPIFFS_PHYSICAL_SIZE;
+		fs[file_sys_nr].cfg.phys_size = driver->static_size;
+	}
+
+	debug1("phy size:%u phys addr:%u erase block:%u block size:%u page size:%u", \
+			fs[file_sys_nr].cfg.phys_size,
+			fs[file_sys_nr].cfg.phys_addr,
+			fs[file_sys_nr].cfg.phys_erase_block,
+			fs[file_sys_nr].cfg.log_block_size,
+			fs[file_sys_nr].cfg.log_page_size);
+
+
 	#ifndef FS_NO_CONFIG_VALIDATION
 		uint32_t spiffs_file_system_size = fs[file_sys_nr].cfg.phys_size;
 		uint32_t log_block_size = fs[file_sys_nr].cfg.log_block_size;
@@ -447,7 +462,6 @@ static void fs_mount ()
 			logger(0 == r ? LOG_DEBUG1: LOG_ERR1, "mnt %d", (int)r);
 			ret = r;
 		}
-
 		if(SPIFFS_OK == ret)
 		{
 			uint32_t total, used;
