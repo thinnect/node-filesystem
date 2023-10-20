@@ -152,13 +152,6 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 #endif
 	}
 
-	// Take physical size from JEDEC
-	if (driver->static_size != 0)
-	{
-		// fs[file_sys_nr].cfg.phys_size = FS_SPIFFS_PHYSICAL_SIZE;
-		fs[file_sys_nr].cfg.phys_size = driver->static_size;
-	}
-
 	debug1("phy size:%u phys addr:%u erase block:%u block size:%u page size:%u", \
 			fs[file_sys_nr].cfg.phys_size,
 			fs[file_sys_nr].cfg.phys_addr,

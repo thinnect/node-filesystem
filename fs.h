@@ -33,7 +33,6 @@ typedef struct fs_driver_struct
 	void (*suspend)();
 	void (*lock)();
 	void (*unlock)();
-	uint32_t static_size;
 } fs_driver_t;
 
 typedef int32_t fs_fd;
