@@ -29,6 +29,7 @@
 #include "platform_mutex.h"
 #include "spi_flash.h"
 #include "spiffs.h"
+#include "lfs.h"
 #include "cmsis_os2.h"
 
 #include "loglevels.h"
@@ -80,10 +81,14 @@ static void fs_suspend_timer_cb(void * arg);
 // define read/write flags after filesystem suspend timer flags
 #define FS_WRITE_FLAG       (0x01 << FS_MAX_COUNT)
 #define FS_READ_FLAG        (0x01 << (FS_MAX_COUNT + 1))
+#define FS_CHECK_FLAG       (0x01 << (FS_MAX_COUNT + 2))
 
 static osThreadId_t m_thread_id;
 static osMessageQueueId_t m_wr_queue_id;
 static osMessageQueueId_t m_rd_queue_id;
+static osMessageQueueId_t m_chk_queue_id;
+
+static bool volatile m_fs_ready = false;
 
 typedef struct fs_rw_params
 {
@@ -209,14 +214,6 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 
 void fs_start ()
 {
-	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 2048 };
-	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
-	if (NULL == m_thread_id)
-	{
-		err1("!Thread");
-		while(1);
-	}
-
 	const osMessageQueueAttr_t wr_q_attr = { .name = "fs_wr_q" };
 	m_wr_queue_id = osMessageQueueNew(MAX_Q_WR_COUNT, sizeof(fs_rw_params_t), &wr_q_attr);
 	if (NULL == m_wr_queue_id)
@@ -232,12 +229,54 @@ void fs_start ()
 		err1("!Queue");
 		while(1);
 	}
-	// For now we just mount it in the current thread
-	fs_mount();
+
+	const osMessageQueueAttr_t chk_q_attr = { .name = "fs_chk_q" };
+	m_chk_queue_id = osMessageQueueNew(1, sizeof(fs_rw_params_t), &chk_q_attr);
+	if (NULL == m_chk_queue_id)
+	{
+		err1("!Queue");
+		while(1);
+	}
+
+	const osThreadAttr_t thread_attr = { .name = "fs", .stack_size = 2048 };
+	m_thread_id = osThreadNew(fs_thread, NULL, &thread_attr);
+	if (NULL == m_thread_id)
+	{
+		err1("!Thread");
+		while(1);
+	}
+}
+
+bool fs_ready ()
+{
+	return m_fs_ready;
+}
+
+int32_t fs_check (int file_sys_nr)
+{
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
+	fs_abort_suspend(file_sys_nr);
+	platform_mutex_acquire(fs[file_sys_nr].mutex);
+
+	int32_t err = SPIFFS_check(&fs[file_sys_nr].fs);
+
+	fs_plan_suspend(file_sys_nr);
+	platform_mutex_release(fs[file_sys_nr].mutex);
+
+	return err;
 }
 
 int32_t fs_info (int file_sys_nr, uint32_t * p_total, uint32_t * p_used)
 {
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 
@@ -259,11 +298,15 @@ int32_t fs_info (int file_sys_nr, uint32_t * p_total, uint32_t * p_used)
 	return ret;
 }
 
-
 fs_fd fs_open (int file_sys_nr, char *path, uint32_t flags)
 {
 	spiffs_file sfd;
 	fs_fd fd;
+
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
 
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
@@ -287,6 +330,11 @@ int32_t fs_read (int file_sys_nr, fs_fd fd, void *buf, int32_t len)
 {
 	int32_t ret;
 
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -309,6 +357,11 @@ int32_t fs_write (int file_sys_nr, fs_fd fd, const void *buf, int32_t len)
 {
 	int32_t ret;
 
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -330,6 +383,11 @@ int32_t fs_write (int file_sys_nr, fs_fd fd, const void *buf, int32_t len)
 int32_t fs_lseek (int file_sys_nr, fs_fd fd, int32_t offs, int whence)
 {
 	int32_t ret;
+
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
 
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
@@ -354,6 +412,11 @@ int32_t fs_fstat (int file_sys_nr, fs_fd fd, fs_stat *s)
 	int32_t ret;
 	spiffs_stat stat;
 
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -375,6 +438,11 @@ int32_t fs_fstat (int file_sys_nr, fs_fd fd, fs_stat *s)
 
 void fs_flush (int file_sys_nr, fs_fd fd)
 {
+	if (NULL == m_thread_id)
+	{
+		return;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -394,6 +462,11 @@ void fs_flush (int file_sys_nr, fs_fd fd)
 
 void fs_close (int file_sys_nr, fs_fd fd)
 {
+	if (NULL == m_thread_id)
+	{
+		return;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -413,6 +486,11 @@ void fs_close (int file_sys_nr, fs_fd fd)
 
 void fs_unlink (int file_sys_nr, char *path)
 {
+	if (NULL == m_thread_id)
+	{
+		return;
+	}
+
 	fs_abort_suspend(file_sys_nr);
 	platform_mutex_acquire(fs[file_sys_nr].mutex);
 	while(!fs[file_sys_nr].ready);
@@ -482,15 +560,16 @@ static void fs_suspend_timer_cb (void * arg)
 
 static void fs_thread (void * p)
 {
-	osStatus_t res;
-	fs_rw_params_t params;
-	fs_fd file_desc;
-	int32_t fs_res;
 	uint32_t flags;
 
 	debug1("Thread starts");
 	flags = osThreadFlagsClear(FS_THREAD_FLAGS_ALL);
 	debug1("ThrFlgs:0x%X", flags);
+
+	// For now we just mount it in the current thread
+	fs_mount();
+
+	m_fs_ready = true;
 
 	for (;;)
 	{
@@ -504,12 +583,14 @@ static void fs_thread (void * p)
 		}
 		if (flags & FS_WRITE_FLAG)
 		{
-			debug1("Wr Thread");
+			debug1("WrThd");
 			// wait parameter is set to 0 to avoid thread blocking because there should be data in the queue
-			res = osMessageQueueGet(m_wr_queue_id, (void*)&params, NULL, 0);
+			fs_rw_params_t params;
+			osStatus_t res = osMessageQueueGet(m_wr_queue_id, (void*)&params, NULL, 0);
 			switch (res)
 			{
 				case osOK:
+				{
 					// open file for writing
 					debug2("p:%d f:%s pv:%p l:%d fnc:%p",
 						   params.file_sys_nr, \
@@ -518,7 +599,7 @@ static void fs_thread (void * p)
 						   params.len, \
 						   params.f_callback);
 
-					file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_WRONLY);
+					fs_fd file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_WRONLY);
 					if (file_desc < 0)
 					{
 						// file does not exists or some other error
@@ -533,25 +614,23 @@ static void fs_thread (void * p)
 					}
 					if (file_desc >= 0)
 					{
-						fs_res = fs_write(params.file_sys_nr, file_desc, params.p_value, params.len);
+						int32_t fs_res = fs_write(params.file_sys_nr, file_desc, params.p_value, params.len);
 						fs_close(params.file_sys_nr, file_desc);
 						params.f_callback(fs_res, params.p_user);
 					}
+				}
 				break;
 
 				case osErrorResource:
 					err1("Queue empty!");
-					params.f_callback(0, params.p_user);
 				break;
 
 				case osErrorParameter:
 					err1("Parameter!");
-					params.f_callback(0, params.p_user);
 				break;
 
 				default:
 					err1("Unknown error!");
-					params.f_callback(0, params.p_user);
 			}
 			if (osMessageQueueGetCount(m_wr_queue_id) > 0)
 			{
@@ -562,14 +641,16 @@ static void fs_thread (void * p)
 
 		if (flags & FS_READ_FLAG)
 		{
-			debug1("Rd Thread");
+			debug1("RdThd");
 			// open file for reading
 			// wait parameter is set to 0 to avoid thread blocking because there should be data in the queue
-			res = osMessageQueueGet(m_rd_queue_id, (void*)&params, NULL, 0);
+			fs_rw_params_t params;
+			osStatus_t res = osMessageQueueGet(m_rd_queue_id, (void*)&params, NULL, 0);
 			switch (res)
 			{
 				case osOK:
-					file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_RDONLY);
+				{
+					fs_fd file_desc = fs_open(params.file_sys_nr, (void*)params.p_file_name, FS_RDONLY);
 					debug1("fd:%d", file_desc);
 					if (file_desc < 0)
 					{
@@ -579,25 +660,58 @@ static void fs_thread (void * p)
 					}
 					else
 					{
-						fs_res = fs_read(params.file_sys_nr, file_desc, params.p_value, params.len);
+						int32_t fs_res = fs_read(params.file_sys_nr, file_desc, params.p_value, params.len);
 						fs_close(params.file_sys_nr, file_desc);
 						params.f_callback(fs_res, params.p_user);
 					}
+				}
 				break;
 
 				case osErrorResource:
 					err1("Queue empty!");
-					params.f_callback(0, params.p_user);
 				break;
 
 				case osErrorParameter:
 					err1("Parameter!");
-					params.f_callback(0, params.p_user);
 				break;
 
 				default:
 					err1("Unknown error!");
-					params.f_callback(0, params.p_user);
+			}
+			if (osMessageQueueGetCount(m_rd_queue_id) > 0)
+			{
+				debug1("Rd pending");
+				osThreadFlagsSet(m_thread_id, FS_READ_FLAG);
+			}
+		}
+
+		if (flags & FS_CHECK_FLAG)
+		{
+			debug1("ChkThd");
+			// Check a filesystem for errrors ... could take a long time
+			// wait parameter is set to 0 to avoid thread blocking because there should be data in the queue
+			fs_rw_params_t params;
+			osStatus_t res = osMessageQueueGet(m_chk_queue_id, (void*)&params, NULL, 0);
+			switch (res)
+			{
+				case osOK:
+				{
+					int32_t fchk = fs_check(params.file_sys_nr);
+					debug1("fchk:%d", fchk);
+					params.f_callback(fchk, params.p_user);
+				}
+				break;
+
+				case osErrorResource:
+					err1("Queue empty!");
+				break;
+
+				case osErrorParameter:
+					err1("Parameter!");
+				break;
+
+				default:
+					err1("Unknown error!");
 			}
 			if (osMessageQueueGetCount(m_rd_queue_id) > 0)
 			{
@@ -887,6 +1001,11 @@ int32_t fs_read_record (int file_sys_nr,
                         fs_rw_done_f f_callback,
                         void * p_user)
 {
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	if ((file_sys_nr > 2) || (file_sys_nr < 0))
 	{
 		err1("File system number:%d", file_sys_nr);
@@ -924,6 +1043,11 @@ int32_t fs_write_record (int file_sys_nr,
                          fs_rw_done_f f_callback,
                          void * p_user)
 {
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
 	if ((file_sys_nr > 2) || (file_sys_nr < 0))
 	{
 		err1("File system number:%d", file_sys_nr);
@@ -935,4 +1059,58 @@ int32_t fs_write_record (int file_sys_nr,
 		return 0;
 	}
 	return fs_rw_record(FS_WRITE_DATA, file_sys_nr, p_file_name, p_value, len, wait, f_callback, p_user);
+}
+
+int32_t fs_queue_check (int file_sys_nr,
+                        uint32_t wait,
+                        fs_rw_done_f f_callback,
+                        void * p_user)
+{
+	if (NULL == m_thread_id)
+	{
+		return -7;
+	}
+
+	if ((file_sys_nr > 2) || (file_sys_nr < 0))
+	{
+		err1("File system number:%d", file_sys_nr);
+		return 0;
+	}
+	if (NULL == f_callback)
+	{
+		err1("Callback = NULL");
+		return 0;
+	}
+
+	fs_rw_params_t params;
+	params.file_sys_nr = file_sys_nr;
+	params.p_file_name = NULL;
+	params.p_value = NULL;
+	params.len = 0;
+	params.f_callback = f_callback;
+	params.p_user = p_user;
+	osStatus_t res = osMessageQueuePut(m_chk_queue_id, &params, 0U, wait == 0 ? 0 : osWaitForever);
+	switch (res)
+	{
+		case osOK:
+			osThreadFlagsSet(m_thread_id, FS_CHECK_FLAG);
+			return 1;
+		break;
+
+		case osErrorResource:
+			warn1("QFull!");
+		break;
+
+		case osErrorTimeout:
+			warn1("Timeout!");
+		break;
+
+		case osErrorParameter:
+			err1("Parameter!");
+		break;
+
+		default:
+			err1("Error:%d", res);
+	}
+	return 0;
 }

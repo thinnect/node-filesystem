@@ -8,6 +8,7 @@
 #define _FS_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "spiffs.h"
 
 #define FS_APPEND (SPIFFS_APPEND)
@@ -26,7 +27,7 @@
 typedef struct fs_driver_struct
 {
 	int32_t(*read)(int partition, uint32_t addr, uint32_t size, uint8_t * dst);
-	int32_t(*write)(int partition, uint32_t addr, uint32_t size, uint8_t * src);
+	int32_t(*write)(int partition, uint32_t addr, uint32_t size, const uint8_t * src);
 	int32_t(*erase)(int partition, uint32_t addr, uint32_t size);
 	int32_t(*size)(int partition);
 	int32_t(*erase_size)(int partition);
@@ -60,17 +61,26 @@ typedef void (*fs_rw_done_f) (int32_t len,  void * p_user);
 void fs_init(int file_sys_nr, int partition, fs_driver_t *driver);
 
 /**
- * Starts filesystem thread.
+ * Starts filesystem thread, which mounts the filesystem.
  */
 void fs_start();
 
 /**
+ * Filesystem has been mounted, probably good to wait on this
+ * after calling fs_start.
+ *
+ * @return true Filesystem has been mounted;
+ * @return false Filesystem has not been mounted yet.
+ */
+bool fs_ready();
+
+/**
  * Return filesystem total and used space.
- * 
+ *
  * @param file_sys_nr - File system number 0..2
  * @param p_total - Memory to stored total available space value (may be NULL if not needed).
  * @param p_used - Memory to stored used space value (may be NULL if not needed).
- * 
+ *
  * @return 0 for success, SPIFFS error otherwise.
  */
 int32_t fs_info (int file_sys_nr, uint32_t * p_total, uint32_t * p_used);
@@ -195,6 +205,21 @@ int32_t fs_write_record (int file_sys_nr,
                         const char * p_file_name,
                         const void * p_value,
                         int32_t len,
+                        uint32_t wait,
+                        fs_rw_done_f f_callback,
+                        void * p_user);
+
+/*****************************************************************************
+ * Queue a filesystem check to the filesystem thread
+ * @param file_sys_nr - File system number 0..2
+ * @param wait - When wait = 0 function returns immediately, even when putting fails,
+ *                otherwise waits until put succeeds (and blocks calling thread)
+ * @param f_callback - Callback when operation has been completed.
+ * @param p_user - User pointer passed to callback.
+ *
+ * @return Returns 1 if check got queued, 0 otherwise
+ ****************************************************************************/
+int32_t fs_queue_check (int file_sys_nr,
                         uint32_t wait,
                         fs_rw_done_f f_callback,
                         void * p_user);

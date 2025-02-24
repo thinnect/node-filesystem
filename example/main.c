@@ -211,7 +211,7 @@ int main ()
 
     osKernelInitialize();
 
-    const osThreadAttr_t main_thread_attr = { .name = "main", .stack_size = 4096 };
+    const osThreadAttr_t main_thread_attr = { .name = "main", .stack_size = 3072 };
     osThreadNew(main_loop, NULL, &main_thread_attr);
 
     if (osKernelReady == osKernelGetState())
@@ -225,4 +225,3 @@ int main ()
 
     while (true);
 }
-
