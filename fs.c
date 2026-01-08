@@ -210,7 +210,15 @@ void fs_init (int file_sys_nr, int partition, fs_driver_t *driver)
 #ifdef FS_MANAGE_FLASH_SLEEP
 	if(file_sys_nr < FS_MAX_COUNT)
 	{
-		m_sleep_timers[file_sys_nr] = osTimerNew(&fs_suspend_timer_cb, osTimerOnce, (void*)(intptr_t)file_sys_nr, NULL);
+		osTimerId_t timer_id = osTimerNew(&fs_suspend_timer_cb, osTimerOnce, (void*)(intptr_t)file_sys_nr, NULL);
+		if (NULL == timer_id)
+		{
+			err1("!Timer");
+		}
+		else
+		{
+			m_sleep_timers[file_sys_nr] = timer_id;
+		}
 	}
 #endif
 }
@@ -637,14 +645,28 @@ static void fs_thread (void * p)
 static void fs_plan_suspend (int file_sys_nr)
 {
 	#ifdef FS_MANAGE_FLASH_SLEEP
-		osTimerStart(m_sleep_timers[file_sys_nr], 100);
+		if (NULL != m_sleep_timers[file_sys_nr])
+		{
+			osTimerStart(m_sleep_timers[file_sys_nr], 100);
+		}
+		else
+		{
+			err1("No tmr!");
+		}
 	#endif//FS_MANAGE_FLASH_SLEEP
 }
 
 static void fs_abort_suspend (int file_sys_nr)
 {
 	#ifdef FS_MANAGE_FLASH_SLEEP
-		osTimerStop(m_sleep_timers[file_sys_nr]);
+		if (NULL != m_sleep_timers[file_sys_nr])
+		{
+			osTimerStop(m_sleep_timers[file_sys_nr]);
+		}
+		else
+		{
+			err1("No tmr!");
+		}
 	#endif//FS_MANAGE_FLASH_SLEEP
 }
 
